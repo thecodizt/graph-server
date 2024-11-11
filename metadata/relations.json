@@ -1,0 +1,132 @@
+{
+	"nodes": {
+		"Parts": {
+			"type": "dynamic",
+			"usage": "core",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"description": "string",
+				"type": "string",
+				"cost": "float",
+				"importance": "integer",
+				"expected_life": "integer",
+				"units_in_chain": "integer",
+				"expiry": "integer"
+			}
+		},
+		"Supplier": {
+			"type": "static",
+			"usage": "supplement",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"location": "string",
+				"reliability": "float",
+				"size": "string"
+			}
+		},
+		"Warehouse": {
+			"type": "dynamic",
+			"usage": "supplement",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"type": "string",
+				"size": "string",
+				"location": "string",
+				"max_capacity": "integer",
+				"current_capacity": "integer",
+				"safety_stock": "integer"
+			}
+		},
+		"ProductFamily": {
+			"type": "static",
+			"usage": "core",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"revenue": "float"
+			}
+		},
+		"ProductOffering": {
+			"type": "static",
+			"usage": "core",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"cost": "float",
+				"demand": "integer"
+			}
+		},
+		"BusinessUnit": {
+			"type": "static",
+			"usage": "core",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"description": "string",
+				"revenue": "float"
+			}
+		},
+		"Facility": {
+			"type": "dynamic",
+			"usage": "core",
+			"features": {
+				"id": "string",
+				"name": "string",
+				"type": "string",
+				"location": "string",
+				"max_capacity": "integer",
+				"operating_cost": "float"
+			}
+		}
+	},
+	"edges": {
+		"SupplierToWarehouse": {
+			"source": "Supplier",
+			"target": "Warehouse",
+			"features": {
+				"transportation_cost": "float",
+				"lead_time": "integer"
+			}
+		},
+		"WarehouseToParts": {
+			"source": "Warehouse",
+			"target": "Parts",
+			"features": {
+				"inventory_level": "integer",
+				"storage_cost": "float"
+			}
+		},
+		"PartsToFacility": {
+			"source": "Parts",
+			"target": "Facility",
+			"features": {
+				"quantity": "integer",
+				"distance_from_warehouse": "float",
+				"transport_cost": "float",
+				"lead_time": "integer"
+			}
+		},
+		"FacilityToProductOfferings": {
+			"source": "Facility",
+			"target": "ProductOffering",
+			"features": {
+				"product_cost": "float",
+				"lead_time": "integer",
+				"quantity_produced": "integer"
+			}
+		},
+		"ProductOfferingsToProductFamilies": {
+			"source": "ProductOffering",
+			"target": "ProductFamily",
+			"features": {}
+		},
+		"ProductFamiliesToBusinessUnit": {
+			"source": "ProductFamily",
+			"target": "BusinessUnit",
+			"features": {}
+		}
+	}
+}
