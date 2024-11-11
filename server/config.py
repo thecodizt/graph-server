@@ -23,6 +23,7 @@ BASE_SCHEMAARCHIVE_PATH = os.environ.get(
     "SCHEMAARCHIVE_PATH", "/app/data/schemaarchive"
 )
 BASE_LIVESCHEMA_PATH = os.environ.get("LIVESCHEMA_PATH", "/app/data/liveschema")
+BASE_NATIVE_FORMAT_PATH = os.environ.get("NATIVE_FORMAT_PATH", "/app/data/nativeformat")
 
 
 # Get versioned paths
@@ -32,6 +33,7 @@ def get_paths(version: str = None):
         "STATEARCHIVE_PATH": get_versioned_path(BASE_STATEARCHIVE_PATH, version),
         "SCHEMAARCHIVE_PATH": get_versioned_path(BASE_SCHEMAARCHIVE_PATH, version),
         "LIVESCHEMA_PATH": get_versioned_path(BASE_LIVESCHEMA_PATH, version),
+        "NATIVE_FORMAT_PATH": get_versioned_path(BASE_NATIVE_FORMAT_PATH, version),
     }
 
 

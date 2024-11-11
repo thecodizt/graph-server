@@ -29,6 +29,7 @@ LIVESTATE_PATH = paths["LIVESTATE_PATH"]
 STATEARCHIVE_PATH = paths["STATEARCHIVE_PATH"]
 SCHEMAARCHIVE_PATH = paths["SCHEMAARCHIVE_PATH"]
 LIVESCHEMA_PATH = paths["LIVESCHEMA_PATH"]
+NATIVE_FORMAT_PATH = paths["NATIVE_FORMAT_PATH"]
 
 CURRENT_TIMESTAMP = None
 
@@ -139,6 +140,23 @@ def load_live_state(paths):
         return load_live_state(paths)
 
 
+def save_native_format(graph: nx.DiGraph, timestamp: int, path: str):
+    GRAPHML_PATH = f"{path}/graphml"
+
+    os.makedirs(GRAPHML_PATH, exist_ok=True)
+
+    nx.write_graphml(
+        graph,
+        GRAPHML_PATH + f"/{timestamp}.graphml",
+        encoding="utf-8",
+        prettyprint=True,
+    )
+
+    logger.info(f"Successfully wrote graph to {GRAPHML_PATH}")
+
+    # convert networkx graph to graphml format and write to file in safe manner by using locks
+
+
 def save_graph(
     graph: nx.DiGraph,
     paths: Dict[str, str],
@@ -149,10 +167,20 @@ def save_graph(
         if timestamp:
             if is_schema:
                 path = f"{paths['SCHEMAARCHIVE_PATH']}"
+
+                save_native_format(graph, timestamp, paths["NATIVE_FORMAT_PATH"])
             else:
                 path = f"{paths['STATEARCHIVE_PATH']}"
             os.makedirs(path, exist_ok=True)
             filepath = f"{path}/{timestamp}.json"
+
+            # Convert graph to node-link format
+            node_link_data = json_graph.node_link_data(graph)
+
+            # compressed_data = compress_graph_json(node_link_data)
+
+            # Use safe write with file locking
+            safe_write_json(filepath, node_link_data)
         else:
             if is_schema:
                 path = f"{paths['LIVESCHEMA_PATH']}"
@@ -161,11 +189,12 @@ def save_graph(
             name = "current_schema" if is_schema else "current_state"
             filepath = f"{path}/{name}.json"
 
-        # Convert graph to node-link format
-        node_link_data = json_graph.node_link_data(graph)
+            # Convert graph to node-link format
+            node_link_data = json_graph.node_link_data(graph)
 
-        # Use safe write with file locking
-        safe_write_json(filepath, node_link_data)
+            # Use safe write with file locking
+            safe_write_json(filepath, node_link_data)
+
     except Exception as e:
         logger.error(f"Error saving graph: {str(e)}")
         raise
