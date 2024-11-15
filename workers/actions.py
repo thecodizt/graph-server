@@ -127,72 +127,102 @@ def process_schema_update(
 ) -> nx.DiGraph:
     """
     Process schema update payload and update the schema graph.
+    Handles both node and edge updates.
 
-    Expected payload structure:
+    Node update payload structure:
     {
         "node_id": str,
         "updates": {
             "properties": {
                 "name": str,
                 "description": str,
-                "attributes": Dict[str, Any],
                 ...
             }
         }
     }
 
-    Edge updates are handled through separate create/delete operations
+    Edge update payload structure:
+    {
+        "source_id": str,
+        "target_id": str,
+        "edge_type": str,
+        "updates": {
+            "properties": {
+                "property1": value1,
+                ...
+            }
+        }
+    }
     """
     try:
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
-        node_id = payload["node_id"]
 
-        logger.info(f"Processing schema update: {node_id}")
+        # Check if this is an edge update
+        if "source_id" in payload and "target_id" in payload:
+            source_id = payload["source_id"]
+            target_id = payload["target_id"]
+            edge_type = payload["edge_type"]
 
-        if not schema.has_node(node_id):
-            raise ValueError(f"Node {node_id} does not exist in schema")
+            logger.info(f"Processing edge update: {source_id} -> {target_id}")
 
-        # Update node properties
-        properties = None
-        try:
-            properties = dict(payload["updates"]["properties"])
-        except KeyError:
-            pass
+            if not schema.has_edge(source_id, target_id):
+                raise ValueError(f"Edge from {source_id} to {target_id} does not exist")
 
-        if properties:
-            for key, value in properties.items():
-                schema.nodes[node_id][key] = value
+            # Update edge properties
+            properties = payload["updates"].get("properties", {})
+            if properties:
+                edge_data = schema.get_edge_data(source_id, target_id)
+                edge_data.update(properties)
+                schema.add_edge(source_id, target_id, **edge_data)
 
-            # if units_in_chain is specified, add instances to state graph
-            if "units_in_chain" in properties.keys():
-                units = properties.get("units_in_chain")
-                logger.info(
-                    f"Updating instances to state graph for {node_id} to {units} units"
-                )
-                if units:
-                    try:
-                        units = int(units)
-                    except ValueError:
-                        units = 0
+            logger.info(f"Edge update complete: {source_id} -> {target_id}")
 
-                expiry = None
-                if "expiry" in properties.keys():
-                    try:
-                        expiry = int(properties["expiry"])
-                    except ValueError:
-                        expiry = 0
+        # Node update
+        else:
+            node_id = payload["node_id"]
+            logger.info(f"Processing node update: {node_id}")
 
-                state = update_state_instances(
-                    state_data=state,
-                    parent_id=node_id,
-                    type=schema.nodes[node_id]["node_type"],
-                    target_count=units,
-                    created_at=timestamp,
-                    expiry=expiry,
-                )
+            if not schema.has_node(node_id):
+                raise ValueError(f"Node {node_id} does not exist in schema")
 
-        logger.info(f"Update complete for {node_id}")
+            # Update node properties
+            properties = payload["updates"].get("properties", {})
+            if properties:
+                for key, value in properties.items():
+                    schema.nodes[node_id][key] = value
+
+                # Handle units_in_chain updates for state graph
+                if "units_in_chain" in properties:
+                    units = properties.get("units_in_chain")
+                    logger.info(
+                        f"Updating instances to state graph for {node_id} to {units} units"
+                    )
+
+                    if units:
+                        try:
+                            units = int(units)
+                        except ValueError:
+                            units = 0
+
+                    expiry = None
+                    if "expiry" in properties:
+                        try:
+                            expiry = int(properties["expiry"])
+                        except ValueError:
+                            expiry = 0
+
+                    state = update_state_instances(
+                        state_data=state,
+                        parent_id=node_id,
+                        type=schema.nodes[node_id]["node_type"],
+                        target_count=units,
+                        created_at=timestamp,
+                        expiry=expiry,
+                    )
+
+            logger.info(f"Node update complete for {node_id}")
+
         return schema, state
 
     except KeyError as e:

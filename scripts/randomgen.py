@@ -14,6 +14,7 @@ class RandomNetworkGenerator:
         self.edge_instances: Dict[str, set] = defaultdict(set)
         self.timestamp = 0
         self.operations = []
+        self.is_step_update = False
 
         # Separate core and supplement nodes
         self.core_nodes = {
@@ -83,7 +84,10 @@ class RandomNetworkGenerator:
             return node_id
 
         # Generate node properties
-        properties = {}
+        properties = {
+            "created_at": self.timestamp,
+            "updated_at": self.timestamp,
+        }
         for feature_name, feature_type in self.schema["nodes"][node_type][
             "features"
         ].items():
@@ -103,7 +107,8 @@ class RandomNetworkGenerator:
             },
             "timestamp": self.timestamp,
         }
-        self.timestamp += 1
+        if self.is_step_update:
+            self.timestamp += 1
         self.operations.append(operation)
 
         # Store node instance
@@ -126,7 +131,10 @@ class RandomNetworkGenerator:
             return
 
         # Generate edge properties
-        properties = {}
+        properties = {
+            "created_at": self.timestamp,
+            "updated_at": self.timestamp,
+        }
         for feature_name, feature_type in self.schema["edges"][edge_type][
             "features"
         ].items():
@@ -143,7 +151,8 @@ class RandomNetworkGenerator:
             },
             "timestamp": self.timestamp,
         }
-        self.timestamp += 1
+        if self.is_step_update:
+            self.timestamp += 1
         self.operations.append(operation)
 
         # Store edge instance
@@ -236,6 +245,8 @@ class RandomNetworkGenerator:
                         for target_id in target_ids:
                             self._create_edge(source_id, target_id, edge_type)
 
+        if not self.is_step_update:
+            self.timestamp += 1
         return self.operations
 
     def generate_updates(
@@ -246,49 +257,107 @@ class RandomNetworkGenerator:
             raise ValueError("Network must be created before generating updates")
 
         update_operations = []
+        UPDATE_PROBABILITY = 0.3  # 30% chance for each property to be updated
 
         # Generate node updates
         for _ in range(node_updates):
-            # Randomly select a node type and node
             node_type = random.choice(list(self.node_instances.keys()))
             if not self.node_instances[node_type]:
                 continue
             node_id = random.choice(list(self.node_instances[node_type].keys()))
 
-            # Generate new random properties
-            properties = {}
+            # Generate new random properties only with probability
+            properties = {"updated_at": self.timestamp}
             for feature_name, feature_type in self.schema["nodes"][node_type][
                 "features"
             ].items():
-                if feature_name != "id":  # Don't update ID
+                if (
+                    feature_name not in ["id", "created_at", "updated_at"]
+                    and random.random() < UPDATE_PROBABILITY
+                ):
                     properties[feature_name] = self.generate_random_value(feature_type)
 
-            # Create update operation
-            operation = {
-                "action": "update",
-                "type": "schema",
-                "payload": {"node_id": node_id, "updates": {"properties": properties}},
-                "timestamp": self.timestamp,
-            }
-            self.timestamp += 1
-            update_operations.append(operation)
+            # Only create update operation if there are properties to update
+            if len(properties) > 1:  # More than just updated_at
+                operation = {
+                    "action": "update",
+                    "type": "schema",
+                    "payload": {
+                        "node_id": node_id,
+                        "updates": {"properties": properties},
+                    },
+                    "timestamp": self.timestamp,
+                }
+                if self.is_step_update:
+                    self.timestamp += 1
+                update_operations.append(operation)
 
-        # Generate edge updates (through delete and create)
+        # Generate edge updates
         for _ in range(edge_updates):
-            # Randomly select an edge type
             if not self.edge_instances:
                 continue
             edge_type = random.choice(list(self.edge_instances.keys()))
             if not self.edge_instances[edge_type]:
                 continue
 
-            # Randomly select an existing edge
             source_id, target_id, _ = random.choice(
                 list(self.edge_instances[edge_type])
             )
 
-            # Delete the existing edge
-            delete_operation = {
+            # Update edge properties with probability
+            properties = {"updated_at": self.timestamp}
+            for feature_name, feature_type in self.schema["edges"][edge_type][
+                "features"
+            ].items():
+                if (
+                    feature_name not in ["id", "created_at", "updated_at"]
+                    and random.random() < UPDATE_PROBABILITY
+                ):
+                    properties[feature_name] = self.generate_random_value(feature_type)
+
+            # Only create update operation if there are properties to update
+            if len(properties) > 1:  # More than just updated_at
+                operation = {
+                    "action": "update",
+                    "type": "schema",
+                    "payload": {
+                        "source_id": source_id,
+                        "target_id": target_id,
+                        "edge_type": edge_type,
+                        "updates": {"properties": properties},
+                    },
+                    "timestamp": self.timestamp,
+                }
+                if self.is_step_update:
+                    self.timestamp += 1
+                update_operations.append(operation)
+
+        if not self.is_step_update:
+            self.timestamp += 1
+        return update_operations
+
+    def generate_deletions(
+        self, node_deletions: int, edge_deletions: int
+    ) -> List[Dict[str, Any]]:
+        """Generate random deletions for existing nodes and edges."""
+        if not self.node_instances or not self.edge_instances:
+            raise ValueError("Network must be created before generating deletions")
+
+        delete_operations = []
+
+        # Generate edge deletions first to avoid orphaned edges
+        for _ in range(edge_deletions):
+            if not self.edge_instances:
+                continue
+            edge_type = random.choice(list(self.edge_instances.keys()))
+            if not self.edge_instances[edge_type]:
+                continue
+
+            source_id, target_id, _ = random.choice(
+                list(self.edge_instances[edge_type])
+            )
+
+            operation = {
                 "action": "delete",
                 "type": "schema",
                 "payload": {
@@ -298,28 +367,51 @@ class RandomNetworkGenerator:
                 },
                 "timestamp": self.timestamp,
             }
-            self.timestamp += 1
-            update_operations.append(delete_operation)
+            if self.is_step_update:
+                self.timestamp += 1
+            delete_operations.append(operation)
 
-            # Create a new edge with updated properties
-            properties = {}
-            for feature_name, feature_type in self.schema["edges"][edge_type][
-                "features"
-            ].items():
-                properties[feature_name] = self.generate_random_value(feature_type)
+            # Remove edge from instances
+            self.edge_instances[edge_type].remove((source_id, target_id, edge_type))
 
-            create_operation = {
-                "action": "create",
+        # Generate node deletions (only from supplement nodes)
+        for _ in range(node_deletions):
+            if not self.supplement_nodes:
+                continue
+
+            node_type = random.choice(list(self.supplement_nodes.keys()))
+            if not self.node_instances.get(node_type, {}):
+                continue
+
+            node_id = random.choice(list(self.node_instances[node_type].keys()))
+            node_data = self.node_instances[node_type][node_id]
+
+            operation = {
+                "action": "delete",
                 "type": "schema",
                 "payload": {
-                    "source_id": source_id,
-                    "target_id": target_id,
-                    "edge_type": edge_type,
-                    "properties": properties,
+                    "node_id": node_id,
+                    "node_type": node_type,  # Add node_type to payload
+                    "cascade": False,  # Don't cascade delete to maintain network integrity
                 },
                 "timestamp": self.timestamp,
             }
-            self.timestamp += 1
-            update_operations.append(create_operation)
+            if self.is_step_update:
+                self.timestamp += 1
+            delete_operations.append(operation)
 
-        return update_operations
+            # Remove node from instances
+            del self.node_instances[node_type][node_id]
+
+            # Remove any associated edges
+            for edge_type in list(self.edge_instances.keys()):
+                self.edge_instances[edge_type] = {
+                    (s, t, e)
+                    for s, t, e in self.edge_instances[edge_type]
+                    if s != node_id and t != node_id
+                }
+
+        if not self.is_step_update:
+            self.timestamp += 1
+
+        return delete_operations
