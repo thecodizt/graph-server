@@ -9,7 +9,34 @@ import matplotlib.patches as mpatches
 
 
 class MeaningfulSimulator:
+    """A simulator for generating meaningful graph data based on a schema.
+    
+    This simulator creates and manages a graph of nodes and edges following a provided schema,
+    simulating real-world scenarios like supply chains or social networks. It supports creating
+    core and supplementary nodes, establishing relationships between them, and updating their
+    properties over time.
+
+    The simulator maintains an internal state of all nodes and edges, and records all operations
+    in batches for replay or analysis purposes.
+
+    Args:
+        schema_json (Dict[str, Any]): A schema definition containing node types, edge types,
+            and their properties. The schema should define 'nodes' with 'usage' ("core" or
+            "supplement") and other required properties.
+
+    Attributes:
+        schema (Dict[str, Any]): The schema definition for the graph
+        node_instances (Dict[str, Dict[str, Dict[str, Any]]]): Storage for all node instances
+        edge_instances (Dict[str, set]): Storage for all edge instances
+        timestamp (int): Current simulation timestamp
+        operations (List[List[Dict[str, Any]]]): List of all operation batches
+        current_batch (List[Dict[str, Any]]): Current batch of operations
+        core_nodes (Dict[str, Any]): Node types marked as "core" in the schema
+        supplement_nodes (Dict[str, Any]): Node types marked as "supplement" in the schema
+    """
+    
     def __init__(self, schema_json: Dict[str, Any]):
+        """Initialize the simulator with a schema definition."""
         self.schema = schema_json
         self.node_instances: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.edge_instances: Dict[str, set] = defaultdict(set)
@@ -30,7 +57,15 @@ class MeaningfulSimulator:
         }
 
     def _create_node(self, node_type: str, node_id: str, properties: Dict[str, Any]) -> None:
-        """Create a node with given properties."""
+        """Create a node with given properties.
+        
+        Args:
+            node_type (str): Type of the node as defined in the schema
+            node_id (str): Unique identifier for the node
+            properties (Dict[str, Any]): Properties to set on the node
+            
+        The node will automatically get 'created_at' and 'updated_at' timestamps.
+        """
         operation = {
             "action": "create",
             "type": "schema",
@@ -52,7 +87,17 @@ class MeaningfulSimulator:
         self.node_instances[node_type][node_id] = operation
 
     def _create_edge(self, source_id: str, target_id: str, edge_type: str, properties: Dict[str, Any]) -> None:
-        """Create an edge with given properties."""
+        """Create an edge between two nodes with given properties.
+        
+        Args:
+            source_id (str): ID of the source node
+            target_id (str): ID of the target node
+            edge_type (str): Type of the edge as defined in the schema
+            properties (Dict[str, Any]): Properties to set on the edge
+            
+        The edge will automatically get 'created_at' and 'updated_at' timestamps.
+        Only creates the edge if it doesn't already exist.
+        """
         edge_key = (source_id, target_id, edge_type)
         if edge_key not in self.edge_instances:
             self.edge_instances[edge_type].add((source_id, target_id))
@@ -73,7 +118,15 @@ class MeaningfulSimulator:
             })
 
     def _update_node(self, node_type: str, node_id: str, properties: Dict[str, Any]) -> None:
-        """Update node properties."""
+        """Update properties of an existing node.
+        
+        Args:
+            node_type (str): Type of the node to update
+            node_id (str): ID of the node to update
+            properties (Dict[str, Any]): New properties to set on the node
+            
+        The node's 'updated_at' timestamp will be automatically updated.
+        """
         operation = {
             "action": "update",
             "type": "schema",
@@ -97,7 +150,16 @@ class MeaningfulSimulator:
             self.node_instances[node_type][node_id]["payload"]["properties"] = {**current, **properties}
 
     def _update_edge(self, source_id: str, target_id: str, edge_type: str, properties: Dict[str, Any]) -> None:
-        """Update edge properties."""
+        """Update properties of an existing edge.
+        
+        Args:
+            source_id (str): ID of the source node
+            target_id (str): ID of the target node
+            edge_type (str): Type of the edge to update
+            properties (Dict[str, Any]): New properties to set on the edge
+            
+        The edge's 'updated_at' timestamp will be automatically updated.
+        """
         edge_key = (source_id, target_id, edge_type)
         if (source_id, target_id) in self.edge_instances[edge_type]:
             self.current_batch.append({
