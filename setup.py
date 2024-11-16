@@ -1,19 +1,22 @@
 import os
 
-
-def create_data_folders():
-    base_folders = [
-        "data/livestate",
-        "data/statearchive",
-        "data/schemaarchive",
-        "data/liveschema",
+def ensure_server_directories(version="v13"):
+    """Ensure all required server directories exist."""
+    base_dirs = [
+        "/app/data/livestate",
+        "/app/data/statearchive",
+        "/app/data/schemaarchive",
+        "/app/data/liveschema",
+        "/app/data/nativeformat"
     ]
-
-    # Create base folders
-    for folder in base_folders:
-        os.makedirs(folder, exist_ok=True)
-        print(f"Created base folder: {folder}")
-
+    
+    # Create base directories
+    for base_dir in base_dirs:
+        os.makedirs(base_dir, exist_ok=True)
+        # Create version subdirectory
+        version_dir = os.path.join(base_dir, version)
+        os.makedirs(version_dir, exist_ok=True)
+        print(f"Created directory: {version_dir}")
 
 if __name__ == "__main__":
-    create_data_folders()
+    ensure_server_directories()

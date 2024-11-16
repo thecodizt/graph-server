@@ -3,6 +3,7 @@ import logging
 from copy import deepcopy
 from typing import Dict, Any, Optional
 import uuid
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -79,24 +80,25 @@ def process_schema_create(
             )
 
             # if units_in_chain is specified, add instances to state graph
-            properties = dict(payload["properties"])
+            properties = dict(payload.get("properties", {}))
             logger.info(f"Available properties: {properties.keys()}")
-            if "units_in_chain" in properties.keys():
-                units = properties.get("units_in_chain")
+            if "units_in_chain" in properties:
+                units = properties.get("units_in_chain", 0)  # Default to 0 if None
                 logger.info(
                     f"Adding instances to state graph for {node_id} with {units} units"
                 )
-                if units:
-                    try:
-                        units = int(units)
-                    except ValueError:
-                        units = 0
+                try:
+                    units = int(units) if units is not None else 0
+                except (ValueError, TypeError):
+                    units = 0
+                    
                 expiry = None
-                if "expiry" in properties.keys():
+                if "expiry" in properties:
+                    expiry_val = properties.get("expiry", 0)
                     try:
-                        expiry = int(properties["expiry"])
-                    except ValueError:
-                        expiry = 0
+                        expiry = int(expiry_val) if expiry_val is not None else int(time.time()) + 31536000  # Default to 1 year from now
+                    except (ValueError, TypeError):
+                        expiry = int(time.time()) + 31536000  # Default to 1 year from now
 
                 state = update_state_instances(
                     state_data=state,
@@ -128,31 +130,6 @@ def process_schema_update(
     """
     Process schema update payload and update the schema graph.
     Handles both node and edge updates.
-
-    Node update payload structure:
-    {
-        "node_id": str,
-        "updates": {
-            "properties": {
-                "name": str,
-                "description": str,
-                ...
-            }
-        }
-    }
-
-    Edge update payload structure:
-    {
-        "source_id": str,
-        "target_id": str,
-        "edge_type": str,
-        "updates": {
-            "properties": {
-                "property1": value1,
-                ...
-            }
-        }
-    }
     """
     try:
         schema = deepcopy(schema_data)
@@ -166,17 +143,26 @@ def process_schema_update(
 
             logger.info(f"Processing edge update: {source_id} -> {target_id}")
 
-            if not schema.has_edge(source_id, target_id):
-                raise ValueError(f"Edge from {source_id} to {target_id} does not exist")
-
-            # Update edge properties
-            properties = payload["updates"].get("properties", {})
-            if properties:
-                edge_data = schema.get_edge_data(source_id, target_id)
-                edge_data.update(properties)
-                schema.add_edge(source_id, target_id, **edge_data)
-
-            logger.info(f"Edge update complete: {source_id} -> {target_id}")
+            # Add retry logic for edge existence check
+            max_retries = 3
+            retry_count = 0
+            while retry_count < max_retries:
+                if schema.has_edge(source_id, target_id):
+                    # Update edge properties
+                    properties = payload["updates"].get("properties", {})
+                    if properties:
+                        edge_data = schema.get_edge_data(source_id, target_id)
+                        edge_data.update(properties)
+                        schema.add_edge(source_id, target_id, **edge_data)
+                    logger.info(f"Edge update complete: {source_id} -> {target_id}")
+                    break
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.warning(f"Edge not found, retrying {retry_count}/{max_retries}")
+                    time.sleep(0.1)  # Wait before retry
+            
+            if retry_count == max_retries:
+                raise ValueError(f"Edge from {source_id} to {target_id} does not exist after {max_retries} retries")
 
         # Node update
         else:
@@ -225,9 +211,6 @@ def process_schema_update(
 
         return schema, state
 
-    except KeyError as e:
-        logger.error(f"Missing required field in update payload: {str(e)}")
-        raise
     except Exception as e:
         logger.error(f"Error processing schema update: {str(e)}")
         raise
@@ -341,26 +324,37 @@ def update_state_instances(
 
     Args:
         state_data (nx.DiGraph): The state graph.
-        count (int): The number of instances to add.
-        properties (Dict[str, Any]): The properties to add to the instances.
+        parent_id (str): The ID of the parent node.
+        type (str): The type of instances to add.
+        target_count (int): The number of instances to add.
+        created_at (int): The timestamp when instances were created.
+        expiry (Optional[int]): Optional expiry timestamp. If not provided, defaults to 1 year from created_at.
 
     Returns:
         nx.DiGraph: The updated state graph.
     """
+    # Set default expiry to 1 year from created_at if not provided
+    if expiry is None:
+        expiry = created_at + 31536000  # 1 year in seconds
+
     # Count all nodes in state data with parent ID
-    current_count = len(find_nodes_with_property(state_data, parent_id, parent_id))
+    current_count = len(find_nodes_with_property(state_data, "parent_id", parent_id))
 
     # If there are more instances than target count, remove excess instances
     if current_count > target_count:
         excess_count = current_count - target_count
         # remove instances by FIFO on expiry if available, otherwise by FIFO on created_at
         for i in range(excess_count):
+            nodes_to_remove = find_nodes_with_property(state_data, "parent_id", parent_id)
+            # Sort by expiry time, falling back to created_at if expiry is not available
+            # Ensure we have a valid timestamp by using get() with a default value
             node_to_remove = sorted(
-                find_nodes_with_property(state_data, parent_id, parent_id),
+                nodes_to_remove,
                 key=lambda node: state_data.nodes[node].get(
-                    "expiry", state_data.nodes[node]["created_at"]
+                    "expiry",
+                    state_data.nodes[node].get("created_at", 0)  # Default to 0 if neither exists
                 ),
-            )[i]
+            )[0]  # Get the earliest expiring node
             state_data.remove_node(node_to_remove)
 
         logger.info(f"Removed {excess_count} of {type} instances from state graph")
@@ -370,24 +364,13 @@ def update_state_instances(
         for i in range(target_count - current_count):
             # Convert UUID to string when creating node
             node_id = str(uuid.uuid4())
-            if expiry is not None:
-                valid_from = created_at
-                valid_to = created_at + expiry
-                state_data.add_node(
-                    node_id,  # Use string UUID
-                    parent_id=parent_id,
-                    node_type=type,
-                    created_at=created_at,
-                    valid_from=valid_from,
-                    valid_to=valid_to,
-                )
-            else:
-                state_data.add_node(
-                    node_id,  # Use string UUID
-                    parent_id=parent_id,
-                    type=type,
-                    created_at=created_at,
-                )
+            state_data.add_node(
+                node_id,  # Use string UUID
+                parent_id=parent_id,
+                node_type=type,
+                created_at=created_at,
+                expiry=expiry,
+            )
         logger.info(
             f"Added {target_count - current_count} of {type} instances to state graph"
         )
