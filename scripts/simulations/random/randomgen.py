@@ -28,14 +28,49 @@ class RandomNetworkGenerator:
             if info["usage"] == "supplement"
         }
 
-    def generate_random_value(self, feature_type: str) -> Any:
-        """Generate random value based on feature type."""
+    def generate_random_value(self, feature_name: str, feature_type: str) -> Any:
+        """Generate random value based on feature type and name."""
         if feature_type == "string":
-            return "".join(random.choices(string.ascii_letters, k=8))
+            if feature_name in ["type"]:
+                return random.choice(["Type A", "Type B", "Type C"])
+            elif feature_name in ["location"]:
+                return random.choice(["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"])
+            elif feature_name in ["size"]:
+                return random.choice(["Small", "Medium", "Large", "Extra Large"])
+            elif feature_name in ["name"]:
+                return f"Name_{random.randint(1000, 9999)}"
+            elif feature_name in ["description"]:
+                return f"Description_{random.randint(1000, 9999)}"
+            else:
+                return "".join(random.choices(string.ascii_letters, k=8))
         elif feature_type == "float":
-            return round(random.uniform(1, 1000), 2)
+            if feature_name in ["cost", "revenue", "transportation_cost", "operating_cost"]:
+                return round(random.uniform(1000, 10000), 2)
+            elif feature_name in ["reliability"]:
+                return round(random.uniform(0, 1), 2)
+            else:
+                return round(random.uniform(1, 1000), 2)
         elif feature_type == "integer":
-            return random.randint(1, 100)
+            if feature_name in ["max_capacity", "current_capacity"]:
+                return random.randint(1000, 5000)
+            elif feature_name in ["safety_stock", "inventory_level"]:
+                return random.randint(100, 1000)
+            elif feature_name in ["lead_time"]:
+                return random.randint(1, 30)
+            elif feature_name in ["quantity", "quantity_produced"]:
+                return random.randint(50, 500)
+            elif feature_name in ["demand"]:
+                return random.randint(100, 1000)
+            elif feature_name in ["importance"]:
+                return random.randint(1, 5)
+            elif feature_name in ["expected_life"]:
+                return random.randint(365, 3650)  # 1-10 years in days
+            elif feature_name in ["units_in_chain"]:
+                return random.randint(1, 100)
+            elif feature_name in ["expiry"]:
+                return random.randint(30, 365)  # 1 month to 1 year in days
+            else:
+                return random.randint(1, 100)
         else:
             return None
 
@@ -87,14 +122,14 @@ class RandomNetworkGenerator:
 
         # Generate node properties
         properties = {
-            "created_at": self.timestamp,
-            "updated_at": self.timestamp,
+            "id": node_id,  # Always set ID first
         }
-        for feature_name, feature_type in self.schema["nodes"][node_type]["features"].items():
-            if feature_name == "id":
-                properties[feature_name] = node_id
-            else:
-                properties[feature_name] = self.generate_random_value(feature_type)
+
+        # Get all required features from schema and generate values
+        node_features = self.schema["nodes"][node_type]["features"]
+        for feature_name, feature_type in node_features.items():
+            if feature_name != "id":  # Skip ID as we already set it
+                properties[feature_name] = self.generate_random_value(feature_name, feature_type)
 
         # Create node operation
         operation = {
@@ -118,6 +153,44 @@ class RandomNetworkGenerator:
 
         return node_id
 
+    def _create_supplement_node(self, node_type: str, node_id: str) -> str:
+        """Create a single supplement node."""
+        if self._node_exists(node_type, node_id):
+            return node_id
+
+        # Generate node properties
+        properties = {
+            "id": node_id,  # Always set ID first
+        }
+
+        # Get all required features from schema and generate values
+        node_features = self.schema["nodes"][node_type]["features"]
+        for feature_name, feature_type in node_features.items():
+            if feature_name != "id":  # Skip ID as we already set it
+                properties[feature_name] = self.generate_random_value(feature_name, feature_type)
+
+        # Create node operation
+        operation = {
+            "action": "create",
+            "type": "schema",
+            "payload": {
+                "node_id": node_id,
+                "node_type": node_type,  # Add node_type to payload
+                "properties": properties,
+            },
+            "timestamp": self.timestamp,
+        }
+        if self.is_step_update:
+            self.timestamp += 1
+        self.operations.append(operation)
+
+        # Store node instance
+        if node_type not in self.node_instances:
+            self.node_instances[node_type] = {}
+        self.node_instances[node_type][node_id] = operation
+
+        return node_id
+
     def _create_edge(self, source_id: str, target_id: str, edge_type: str) -> None:
         """Create an edge between two nodes."""
         # Check if edge already exists
@@ -126,12 +199,12 @@ class RandomNetworkGenerator:
             return
 
         # Generate edge properties
-        properties = {
-            "created_at": self.timestamp,
-            "updated_at": self.timestamp,
-        }
-        for feature_name, feature_type in self.schema["edges"][edge_type]["features"].items():
-            properties[feature_name] = self.generate_random_value(feature_type)
+        properties = {}
+
+        # Get all required features from schema and generate values
+        edge_features = self.schema["edges"][edge_type]["features"]
+        for feature_name, feature_type in edge_features.items():
+            properties[feature_name] = self.generate_random_value(feature_name, feature_type)
 
         operation = {
             "action": "create",
@@ -199,7 +272,8 @@ class RandomNetworkGenerator:
             if nodes_per_type.get(root_type, 0) > 0:
                 self._create_node_hierarchy(root_type, "", nodes_per_type)
 
-        # Create supplement nodes
+        # Create supplement nodes first
+        supplement_nodes_by_type = {}
         for node_type in self.supplement_nodes:
             count = nodes_per_type.get(node_type, 0)
             if count <= 0:
@@ -208,18 +282,38 @@ class RandomNetworkGenerator:
             # Create supplement nodes
             supplement_nodes = []
             for i in range(count):
-                node_id = str(i+1)
-                self._create_core_node(node_type, node_id)
+                node_id = f"{node_type}_{i+1}"  # More descriptive IDs for supplement nodes
+                self._create_supplement_node(node_type, node_id)
                 supplement_nodes.append(node_id)
+            supplement_nodes_by_type[node_type] = supplement_nodes
 
-            # Create edges for supplement nodes
+        # Create edges between supplement nodes and their targets
+        # First, handle Supplier to Warehouse connections
+        if "Supplier" in supplement_nodes_by_type and "Warehouse" in supplement_nodes_by_type:
+            suppliers = supplement_nodes_by_type["Supplier"]
+            warehouses = supplement_nodes_by_type["Warehouse"]
+            
+            # Each supplier connects to multiple warehouses
+            for supplier_id in suppliers:
+                # Connect to 30-70% of warehouses
+                num_connections = max(1, int(len(warehouses) * random.uniform(0.3, 0.7)))
+                selected_warehouses = random.sample(warehouses, num_connections)
+                for warehouse_id in selected_warehouses:
+                    self._create_edge(supplier_id, warehouse_id, "SupplierToWarehouse")
+
+        # Then handle other supplement node connections
+        for node_type, nodes in supplement_nodes_by_type.items():
             for edge_type, edge_info in self.schema["edges"].items():
-                if edge_info["source"] == node_type:
+                if edge_info["source"] == node_type and edge_info["target"] != "Warehouse":  # Skip Supplier->Warehouse as already handled
                     target_type = edge_info["target"]
                     if target_type in self.node_instances:
                         target_nodes = list(self.node_instances[target_type].keys())
-                        for source_id in supplement_nodes:
-                            for target_id in target_nodes:
+                        # Connect each supplement node to a subset of target nodes
+                        for source_id in nodes:
+                            # Connect to 20-50% of target nodes
+                            num_connections = max(1, int(len(target_nodes) * random.uniform(0.2, 0.5)))
+                            selected_targets = random.sample(target_nodes, num_connections)
+                            for target_id in selected_targets:
                                 self._create_edge(source_id, target_id, edge_type)
 
         return self.operations
@@ -240,24 +334,31 @@ class RandomNetworkGenerator:
                 continue
             node_id = random.choice(list(self.node_instances[node_type].keys()))
 
-            # Generate new random values for features
-            updates = {"properties": {}}
+            # Get current node properties
+            current_node = self.node_instances[node_type][node_id]
+            current_properties = current_node["payload"]["properties"]
+
+            # Generate new random values for features while preserving required ones
+            updates = {"properties": current_properties.copy()}  # Start with current properties
             for feature_name, feature_type in self.schema["nodes"][node_type]["features"].items():
                 if feature_name != "id" and random.random() < 0.5:  # 50% chance to update each feature
-                    updates["properties"][feature_name] = self.generate_random_value(feature_type)
+                    updates["properties"][feature_name] = self.generate_random_value(feature_name, feature_type)
 
-            if updates["properties"]:
+            if updates["properties"] != current_properties:  # Only update if properties changed
                 operation = {
                     "action": "update",
                     "type": "schema",
                     "payload": {
                         "node_id": node_id,
-                        "updates": updates
+                        "node_type": node_type,  # Add node_type to payload
+                        "updates": updates,
                     },
                     "timestamp": self.timestamp,
                 }
                 self.operations.append(operation)
                 self.timestamp += 1
+                # Update stored instance
+                self.node_instances[node_type][node_id]["payload"]["properties"] = updates["properties"]
 
         # Edge updates
         for _ in range(edge_updates):
@@ -272,24 +373,23 @@ class RandomNetworkGenerator:
 
             # Generate new random values for features
             updates = {"properties": {}}
-            for feature_name, feature_type in self.schema["edges"][edge_type]["features"].items():
-                if random.random() < 0.5:  # 50% chance to update each feature
-                    updates["properties"][feature_name] = self.generate_random_value(feature_type)
+            edge_features = self.schema["edges"][edge_type]["features"]
+            for feature_name, feature_type in edge_features.items():
+                updates["properties"][feature_name] = self.generate_random_value(feature_name, feature_type)
 
-            if updates["properties"]:
-                operation = {
-                    "action": "update",
-                    "type": "schema",
-                    "payload": {
-                        "source_id": source_id,
-                        "target_id": target_id,
-                        "edge_type": edge_type,
-                        "updates": updates
-                    },
-                    "timestamp": self.timestamp,
-                }
-                self.operations.append(operation)
-                self.timestamp += 1
+            operation = {
+                "action": "update",
+                "type": "schema",
+                "payload": {
+                    "source_id": source_id,
+                    "target_id": target_id,
+                    "edge_type": edge_type,
+                    "updates": updates,
+                },
+                "timestamp": self.timestamp,
+            }
+            self.operations.append(operation)
+            self.timestamp += 1
 
         return self.operations
 

@@ -64,8 +64,6 @@ sniffio
 stack-data
 starlette
 sympy
-torch
-torch-geometric
 tornado
 tqdm
 traitlets
