@@ -12,9 +12,6 @@ async def get_live_state(version: str = None):
     os.makedirs(paths["LIVESTATE_PATH"], exist_ok=True)
 
     state_file = f"{paths['LIVESTATE_PATH']}/current_state.json"
-    if not os.path.exists(state_file):
-        with open(state_file, "w") as f:
-            json.dump({"nodes": {}, "links": []}, f)
 
     try:
         with open(state_file, "r") as f:
@@ -24,6 +21,6 @@ async def get_live_state(version: str = None):
         return {"nodes": {}, "links": []}
 
 
-async def queue_live_state_update(update: Change):
-    redis_client.rpush("changes", json.dumps(update))
-    return {"status": "State update queued"}
+# async def queue_live_state_update(update: Change):
+#     redis_client.rpush("changes", json.dumps(update))
+#     return {"status": "State update queued"}

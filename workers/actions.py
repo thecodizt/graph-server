@@ -91,14 +91,20 @@ def process_schema_create(
                     units = int(units) if units is not None else 0
                 except (ValueError, TypeError):
                     units = 0
-                    
+
                 expiry = None
                 if "expiry" in properties:
                     expiry_val = properties.get("expiry", 0)
                     try:
-                        expiry = int(expiry_val) if expiry_val is not None else int(time.time()) + 31536000  # Default to 1 year from now
+                        expiry = (
+                            int(expiry_val)
+                            if expiry_val is not None
+                            else int(time.time()) + 31536000
+                        )  # Default to 1 year from now
                     except (ValueError, TypeError):
-                        expiry = int(time.time()) + 31536000  # Default to 1 year from now
+                        expiry = (
+                            int(time.time()) + 31536000
+                        )  # Default to 1 year from now
 
                 state = update_state_instances(
                     state_data=state,
@@ -158,11 +164,15 @@ def process_schema_update(
                     break
                 retry_count += 1
                 if retry_count < max_retries:
-                    logger.warning(f"Edge not found, retrying {retry_count}/{max_retries}")
+                    logger.warning(
+                        f"Edge not found, retrying {retry_count}/{max_retries}"
+                    )
                     time.sleep(0.1)  # Wait before retry
-            
+
             if retry_count == max_retries:
-                raise ValueError(f"Edge from {source_id} to {target_id} does not exist after {max_retries} retries")
+                raise ValueError(
+                    f"Edge from {source_id} to {target_id} does not exist after {max_retries} retries"
+                )
 
         # Node update
         else:
@@ -345,16 +355,22 @@ def update_state_instances(
         excess_count = current_count - target_count
         # remove instances by FIFO on expiry if available, otherwise by FIFO on created_at
         for i in range(excess_count):
-            nodes_to_remove = find_nodes_with_property(state_data, "parent_id", parent_id)
+            nodes_to_remove = find_nodes_with_property(
+                state_data, "parent_id", parent_id
+            )
             # Sort by expiry time, falling back to created_at if expiry is not available
             # Ensure we have a valid timestamp by using get() with a default value
             node_to_remove = sorted(
                 nodes_to_remove,
                 key=lambda node: state_data.nodes[node].get(
                     "expiry",
-                    state_data.nodes[node].get("created_at", 0)  # Default to 0 if neither exists
+                    state_data.nodes[node].get(
+                        "created_at", 0
+                    ),  # Default to 0 if neither exists
                 ),
-            )[0]  # Get the earliest expiring node
+            )[
+                0
+            ]  # Get the earliest expiring node
             state_data.remove_node(node_to_remove)
 
         logger.info(f"Removed {excess_count} of {type} instances from state graph")

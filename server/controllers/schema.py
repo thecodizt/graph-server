@@ -23,16 +23,16 @@ def get_live_schema(version: str = None) -> Dict[str, Any]:
 def queue_live_schema_update(update: Change) -> Dict[str, str]:
     logger.info(f"Queueing schema update")
 
-    change_dict = {
-        "action": update.action,
+    change_data = {
         "type": update.type,
-        "timestamp": update.timestamp,
+        "action": update.action,
         "payload": update.payload,
+        "timestamp": update.timestamp,
         "version": update.version,
     }
 
     # Synchronous push to Redis
-    redis_client.rpush("changes", json.dumps(change_dict))
+    redis_client.rpush("changes", json.dumps(change_data))
 
     return {"status": "Schema update queued"}
 
@@ -42,7 +42,15 @@ def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
 
     # Process updates one at a time synchronously
     for update in updates:
-        queue_live_schema_update(update)
-        time.sleep(0.1)
+        # Synchronous push to Redis
+        change_data = {
+            "type": update.type,
+            "action": update.action,
+            "payload": update.payload,
+            "timestamp": update.timestamp,
+            "version": update.version,
+        }
+
+        redis_client.rpush("changes", json.dumps(change_data))
 
     return {"status": "Schema update bulk queued"}

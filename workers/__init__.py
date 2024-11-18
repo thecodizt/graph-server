@@ -4,11 +4,10 @@ import threading
 import json
 from time import sleep
 import logging
-import uuid
-import time
 import os
 from typing import Optional, Dict, Any
 import fcntl
+from uuid import uuid4
 
 from .actions import process_schema_create, process_schema_update, process_schema_delete
 
@@ -30,6 +29,7 @@ STATEARCHIVE_PATH = paths["STATEARCHIVE_PATH"]
 SCHEMAARCHIVE_PATH = paths["SCHEMAARCHIVE_PATH"]
 LIVESCHEMA_PATH = paths["LIVESCHEMA_PATH"]
 NATIVE_FORMAT_PATH = paths["NATIVE_FORMAT_PATH"]
+LOCK_PATH = paths["LOCK_PATH"]
 
 CURRENT_TIMESTAMP = None
 
@@ -42,11 +42,12 @@ def write_to_postgres(timestamp, change_data=None):
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS state_deltas (
-                timestamp BIGINT PRIMARY KEY,
+                id VARCHAR(50) PRIMARY KEY,
+                timestamp BIGINT,
                 action VARCHAR(50),
                 change_type VARCHAR(50),
                 change_data JSONB,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                version VARCHAR(50)
             )
         """
         )
@@ -56,15 +57,16 @@ def write_to_postgres(timestamp, change_data=None):
             cursor.execute(
                 """
                 INSERT INTO state_deltas 
-                (timestamp, action, change_type, change_data)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (timestamp) DO NOTHING
+                (id, timestamp, action, change_type, change_data, version)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """,
                 (
-                    timestamp,
+                    str(uuid4()),
+                    change_data["timestamp"],
                     change_data["action"],
                     change_data["type"],
-                    json.dumps(change_data["data"]),
+                    json.dumps(change_data["payload"]),
+                    change_data["version"],
                 ),
             )
 
@@ -79,29 +81,30 @@ def write_to_postgres(timestamp, change_data=None):
 
 def main_worker():
     logger.info("Starting main worker")
+    latest_change = None
+
     while True:
         # Check Redis for new changes
         latest_change = redis_client.lpop("changes")
+
         if latest_change:
             change_data = json.loads(latest_change)
             version = change_data.get("version")
 
             if not version:
-                logger.warning("No version specified in change data, using default")
-                version = "default"
+                logger.warning("No version specified in payload")
+                continue
 
             logger.info(
-                f"Processing change type: {change_data['type']} action: {change_data['action']} version: {version}"
+                f"Processing Type: {change_data['type']} Action: {change_data['action']} Version: {version} Timestamp: {change_data['timestamp']}"
             )
 
             # Get versioned paths for this change
             paths = get_paths(version)
 
-            # if change_data["type"] == "state":
-            #     process_state_change(change_data, paths)
-            # elif change_data["type"] == "schema":
-            #     process_schema_change(change_data, paths)
-            process_schema_change(change_data=change_data, paths=paths)
+            process_schema_change(change_data, paths)
+            write_to_postgres(change_data["timestamp"], change_data)
+
         else:
             sleep(0.01)  # Wait before checking again
 
@@ -154,8 +157,6 @@ def save_native_format(graph: nx.DiGraph, timestamp: int, path: str):
 
     logger.info(f"Successfully wrote graph to {GRAPHML_PATH}")
 
-    # convert networkx graph to graphml format and write to file in safe manner by using locks
-
 
 def save_graph(
     graph: nx.DiGraph,
@@ -202,69 +203,87 @@ def save_graph(
 
 def process_schema_change(change_data, paths):
     global CURRENT_TIMESTAMP
+    lock_file = f"{paths['LOCK_PATH']}/schema.lock"  # Singular lock for all versions
+
+    # Create lock file if it doesn't exist
+    if not os.path.exists(lock_file):
+        logger.info("Creating Lock")
+        open(lock_file, "w").close()
+
     try:
-        schema_data = load_live_schema(paths)
-        state_data = load_live_state(paths)
+        logger.info("Accessing lock")
+        with open(lock_file, "r") as lock:
+            # Get an exclusive lock for the entire schema change process
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            logger.info("Lock acquired")
+            logger.info(f"Processing schema change: {change_data['timestamp']}")
+            try:
+                schema_data = load_live_schema(paths)
+                state_data = load_live_state(paths)
 
-        if change_data["action"] in ["create", "update", "delete"]:
+                if change_data["action"] in ["create", "update", "delete"]:
+                    if change_data["action"] == "create":
+                        schema_data, state_data = process_schema_create(
+                            change_data["payload"],
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
+                        )
+                    elif change_data["action"] == "update":
+                        schema_data, state_data = process_schema_update(
+                            change_data["payload"],
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
+                        )
+                    elif change_data["action"] == "delete":
+                        schema_data, state_data = process_schema_delete(
+                            change_data["payload"],
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
+                        )
 
-            if change_data["action"] == "create":
-                schema_data, state_data = process_schema_create(
-                    change_data["payload"], schema_data, state_data, CURRENT_TIMESTAMP
-                )
-            elif change_data["action"] == "update":
-                schema_data, state_data = process_schema_update(
-                    change_data["payload"], schema_data, state_data, CURRENT_TIMESTAMP
-                )
-            elif change_data["action"] == "delete":
-                schema_data, state_data = process_schema_delete(
-                    change_data["payload"], schema_data, state_data, CURRENT_TIMESTAMP
-                )
+                    save_graph(schema_data, paths, is_schema=True)
+                    save_graph(state_data, paths, is_schema=False)
 
-        save_graph(schema_data, paths, is_schema=True)
-        save_graph(state_data, paths, is_schema=False)
+                    logger.info(
+                        f"Current timestamp: {CURRENT_TIMESTAMP}, change timestamp: {change_data['timestamp']}"
+                    )
 
-        logger.info(
-            f"Current timestamp: {CURRENT_TIMESTAMP}, change timestamp: {change_data['timestamp']}"
-        )
+                    if CURRENT_TIMESTAMP is None:
+                        CURRENT_TIMESTAMP = change_data["timestamp"]
 
-        if CURRENT_TIMESTAMP is None:
-            CURRENT_TIMESTAMP = change_data["timestamp"]
+                    if change_data["timestamp"] != CURRENT_TIMESTAMP:
+                        timestamp = change_data["timestamp"]
+                        save_graph(
+                            schema_data, paths, timestamp=timestamp, is_schema=True
+                        )
+                        save_graph(
+                            state_data, paths, timestamp=timestamp, is_schema=False
+                        )
+                        CURRENT_TIMESTAMP = timestamp
 
-        if change_data["timestamp"] != CURRENT_TIMESTAMP:
-            timestamp = change_data["timestamp"]
-            save_graph(schema_data, paths, timestamp=timestamp, is_schema=True)
-            save_graph(state_data, paths, timestamp=timestamp, is_schema=False)
-            CURRENT_TIMESTAMP = timestamp
-
-        return True
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                return True
 
     except Exception as e:
         logger.error(f"Error processing schema change: {str(e)}")
         return False
 
 
-def safe_write_json(filepath: str, data: Dict[str, Any]) -> None:
-    """Safely write JSON data to file with exclusive lock"""
-    temp_path = f"{filepath}.tmp"
-    try:
-        # First write to temp file
-        with open(temp_path, "w") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                json.dump(data, f, indent=2)
-                f.flush()  # Ensure data is written to disk
-                os.fsync(f.fileno())  # Force write to disk
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        # Then atomically rename temp file to target file
-        os.rename(temp_path, filepath)
-    except Exception as e:
-        logger.error(f"Error writing to {filepath}: {str(e)}")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise
+def safe_write_json(filepath: str, data: Any):
+    with open(filepath, "w") as f:
+        # Get an exclusive lock
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            # Release the lock
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 # Function to start the worker thread

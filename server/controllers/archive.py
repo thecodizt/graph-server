@@ -4,10 +4,10 @@ import networkx as nx
 from ..config import get_paths
 
 
-async def get_schema_archive_list(version: str = None):
+async def get_archive_timestamps(version: str = None):
     paths = get_paths(version)
     archives = os.listdir(paths["SCHEMAARCHIVE_PATH"])
-    return [int(f.split(".")[0]) for f in archives]
+    return sorted([int(f.split(".")[0]) for f in archives])
 
 
 async def get_specific_schema_archive(timestamp: int, version: str = None):
@@ -20,15 +20,9 @@ async def get_specific_schema_archive(timestamp: int, version: str = None):
         return {"error": "Schema archive not found"}
 
 
-async def get_state_archive_list(version: str = None):
-    paths = get_paths(version)
-    archives = os.listdir(paths["STATEARCHIVE_PATH"])
-    return [int(f.split(".")[0]) for f in archives]
-
-
 async def get_specific_state_archive(timestamp: int, version: str = None):
     paths = get_paths(version)
-    file_path = os.path.join(paths["STATEARCHIVE_PATH"], f"state_{timestamp}.json")
+    file_path = os.path.join(paths["STATEARCHIVE_PATH"], f"{timestamp}.json")
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
             return json.load(f)
