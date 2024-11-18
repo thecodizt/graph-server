@@ -115,6 +115,15 @@ class RandomNetworkGenerator:
                 children.append((edge_info["target"], edge_type))
         return children
 
+    def _create_operation(self, action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create an operation with the current timestamp."""
+        return {
+            "action": action,
+            "type": "schema",
+            "payload": payload,
+            "timestamp": self.timestamp,
+        }
+
     def _create_core_node(self, node_type: str, node_id: str) -> str:
         """Create a single core node."""
         if self._node_exists(node_type, node_id):
@@ -132,18 +141,11 @@ class RandomNetworkGenerator:
                 properties[feature_name] = self.generate_random_value(feature_name, feature_type)
 
         # Create node operation
-        operation = {
-            "action": "create",
-            "type": "schema",
-            "payload": {
-                "node_id": node_id,
-                "node_type": node_type,
-                "properties": properties,
-            },
-            "timestamp": self.timestamp,
-        }
-        if self.is_step_update:
-            self.timestamp += 1
+        operation = self._create_operation("create", {
+            "node_id": node_id,
+            "node_type": node_type,
+            "properties": properties,
+        })
         self.operations.append(operation)
 
         # Store node instance
@@ -170,18 +172,11 @@ class RandomNetworkGenerator:
                 properties[feature_name] = self.generate_random_value(feature_name, feature_type)
 
         # Create node operation
-        operation = {
-            "action": "create",
-            "type": "schema",
-            "payload": {
-                "node_id": node_id,
-                "node_type": node_type,  # Add node_type to payload
-                "properties": properties,
-            },
-            "timestamp": self.timestamp,
-        }
-        if self.is_step_update:
-            self.timestamp += 1
+        operation = self._create_operation("create", {
+            "node_id": node_id,
+            "node_type": node_type,
+            "properties": properties,
+        })
         self.operations.append(operation)
 
         # Store node instance
@@ -206,19 +201,13 @@ class RandomNetworkGenerator:
         for feature_name, feature_type in edge_features.items():
             properties[feature_name] = self.generate_random_value(feature_name, feature_type)
 
-        operation = {
-            "action": "create",
-            "type": "schema",
-            "payload": {
-                "source_id": source_id,
-                "target_id": target_id,
-                "edge_type": edge_type,
-                "properties": properties,
-            },
-            "timestamp": self.timestamp,
-        }
-        if self.is_step_update:
-            self.timestamp += 1
+        # Create edge operation
+        operation = self._create_operation("create", {
+            "source_id": source_id,
+            "target_id": target_id,
+            "edge_type": edge_type,
+            "properties": properties,
+        })
         self.operations.append(operation)
 
         # Store edge instance
@@ -254,9 +243,8 @@ class RandomNetworkGenerator:
 
         return created_nodes
 
-    def create_network(self, nodes_per_type: Dict[str, int]) -> List[Dict[str, Any]]:
+    def _create_network_internal(self, nodes_per_type: Dict[str, int]) -> None:
         """Generate network in DFS manner with proper node count relationships."""
-        self.operations = []
         self.node_instances = {}
         self.edge_instances = defaultdict(set)
 
@@ -316,13 +304,21 @@ class RandomNetworkGenerator:
                             for target_id in selected_targets:
                                 self._create_edge(source_id, target_id, edge_type)
 
-        return self.operations
-
-    def generate_updates(self, node_updates: int = 0, edge_updates: int = 0) -> List[Dict[str, Any]]:
-        """Generate random update operations."""
+    def create_network(self, nodes_per_type: Dict[str, int]) -> List[Dict[str, Any]]:
+        """Generate network in DFS manner with proper node count relationships."""
         self.operations = []
-        self.is_step_update = True
 
+        # Create all nodes and edges with the same timestamp
+        self._create_network_internal(nodes_per_type)
+        
+        # Increment timestamp once after all operations are created
+        operations = self.operations
+        if self.is_step_update:
+            self.timestamp += 1
+        return operations
+
+    def _generate_updates_internal(self, node_updates: int = 0, edge_updates: int = 0) -> None:
+        """Generate random update operations."""
         # Node updates
         for _ in range(node_updates):
             if not self.node_instances:
@@ -345,18 +341,12 @@ class RandomNetworkGenerator:
                     updates["properties"][feature_name] = self.generate_random_value(feature_name, feature_type)
 
             if updates["properties"] != current_properties:  # Only update if properties changed
-                operation = {
-                    "action": "update",
-                    "type": "schema",
-                    "payload": {
-                        "node_id": node_id,
-                        "node_type": node_type,  # Add node_type to payload
-                        "updates": updates,
-                    },
-                    "timestamp": self.timestamp,
-                }
+                operation = self._create_operation("update", {
+                    "node_id": node_id,
+                    "node_type": node_type,
+                    "updates": updates,
+                })
                 self.operations.append(operation)
-                self.timestamp += 1
                 # Update stored instance
                 self.node_instances[node_type][node_id]["payload"]["properties"] = updates["properties"]
 
@@ -377,27 +367,30 @@ class RandomNetworkGenerator:
             for feature_name, feature_type in edge_features.items():
                 updates["properties"][feature_name] = self.generate_random_value(feature_name, feature_type)
 
-            operation = {
-                "action": "update",
-                "type": "schema",
-                "payload": {
-                    "source_id": source_id,
-                    "target_id": target_id,
-                    "edge_type": edge_type,
-                    "updates": updates,
-                },
-                "timestamp": self.timestamp,
-            }
+            operation = self._create_operation("update", {
+                "source_id": source_id,
+                "target_id": target_id,
+                "edge_type": edge_type,
+                "updates": updates,
+            })
             self.operations.append(operation)
-            self.timestamp += 1
 
-        return self.operations
-
-    def generate_deletions(self, node_deletions: int = 0, edge_deletions: int = 0) -> List[Dict[str, Any]]:
-        """Generate random deletion operations."""
+    def generate_updates(self, node_updates: int = 0, edge_updates: int = 0) -> List[Dict[str, Any]]:
+        """Generate random update operations."""
         self.operations = []
         self.is_step_update = True
 
+        # Create all updates with the same timestamp
+        self._generate_updates_internal(node_updates, edge_updates)
+        
+        # Increment timestamp once after all operations are created
+        operations = self.operations
+        if self.is_step_update:
+            self.timestamp += 1
+        return operations
+
+    def _generate_deletions_internal(self, node_deletions: int = 0, edge_deletions: int = 0) -> None:
+        """Generate random deletion operations."""
         # Edge deletions
         for _ in range(edge_deletions):
             if not self.edge_instances:
@@ -409,18 +402,12 @@ class RandomNetworkGenerator:
                 continue
             source_id, target_id, _ = random.choice(list(self.edge_instances[edge_type]))
 
-            operation = {
-                "action": "delete",
-                "type": "schema",
-                "payload": {
-                    "source_id": source_id,
-                    "target_id": target_id,
-                    "edge_type": edge_type
-                },
-                "timestamp": self.timestamp,
-            }
+            operation = self._create_operation("delete", {
+                "source_id": source_id,
+                "target_id": target_id,
+                "edge_type": edge_type
+            })
             self.operations.append(operation)
-            self.timestamp += 1
             self.edge_instances[edge_type].remove((source_id, target_id, edge_type))
 
         # Node deletions
@@ -434,17 +421,23 @@ class RandomNetworkGenerator:
                 continue
             node_id = random.choice(list(self.node_instances[node_type].keys()))
 
-            operation = {
-                "action": "delete",
-                "type": "schema",
-                "payload": {
-                    "node_id": node_id,
-                    "cascade": True  # Delete all connected nodes
-                },
-                "timestamp": self.timestamp,
-            }
+            operation = self._create_operation("delete", {
+                "node_id": node_id,
+                "cascade": True  # Delete all connected nodes
+            })
             self.operations.append(operation)
-            self.timestamp += 1
             del self.node_instances[node_type][node_id]
 
-        return self.operations
+    def generate_deletions(self, node_deletions: int = 0, edge_deletions: int = 0) -> List[Dict[str, Any]]:
+        """Generate random deletion operations."""
+        self.operations = []
+        self.is_step_update = True
+
+        # Create all deletions with the same timestamp
+        self._generate_deletions_internal(node_deletions, edge_deletions)
+        
+        # Increment timestamp once after all operations are created
+        operations = self.operations
+        if self.is_step_update:
+            self.timestamp += 1
+        return operations
