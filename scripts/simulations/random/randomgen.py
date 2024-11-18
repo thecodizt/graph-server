@@ -40,7 +40,7 @@ class RandomNetworkGenerator:
             return None
 
     def _get_core_topology(self) -> List[str]:
-        """Get core nodes in topological order (leaf to root)."""
+        """Get core nodes in topological order (root to leaf)."""
         graph = nx.DiGraph()
 
         # Add all core nodes to the graph first
@@ -55,28 +55,30 @@ class RandomNetworkGenerator:
                 graph.add_edge(source_type, target_type)
 
         try:
-            # Return reversed topological sort (from root to leaf)
-            return list(reversed(list(nx.topological_sort(graph))))
+            # Return topological sort (from root to leaf)
+            return list(nx.topological_sort(graph))
         except nx.NetworkXUnfeasible:
             raise ValueError("Core node hierarchy contains cycles")
 
     def _node_exists(self, node_type: str, node_id: str) -> bool:
         """Check if a node with the given type and ID already exists."""
-        return (
-            node_type in self.node_instances
-            and node_id in self.node_instances[node_type]
-        )
+        return node_type in self.node_instances and node_id in self.node_instances[node_type]
 
-    def _get_child_type_and_edge(self, node_type: str) -> Optional[Tuple[str, str]]:
-        """Get the child node type and edge type for a given node type."""
+    def _get_parent_types_and_edges(self, node_type: str) -> List[Tuple[str, str]]:
+        """Get all parent node types and edge types for a given node type."""
+        parents = []
         for edge_type, edge_info in self.schema["edges"].items():
-            if (
-                edge_info["source"] == node_type
-                and edge_info["target"] in self.core_nodes
-                and node_type in self.core_nodes
-            ):
-                return edge_info["target"], edge_type
-        return None
+            if edge_info["target"] == node_type:
+                parents.append((edge_info["source"], edge_type))
+        return parents
+
+    def _get_child_types_and_edges(self, node_type: str) -> List[Tuple[str, str]]:
+        """Get all child node types and edge types for a given node type."""
+        children = []
+        for edge_type, edge_info in self.schema["edges"].items():
+            if edge_info["source"] == node_type:
+                children.append((edge_info["target"], edge_type))
+        return children
 
     def _create_core_node(self, node_type: str, node_id: str) -> str:
         """Create a single core node."""
@@ -88,9 +90,7 @@ class RandomNetworkGenerator:
             "created_at": self.timestamp,
             "updated_at": self.timestamp,
         }
-        for feature_name, feature_type in self.schema["nodes"][node_type][
-            "features"
-        ].items():
+        for feature_name, feature_type in self.schema["nodes"][node_type]["features"].items():
             if feature_name == "id":
                 properties[feature_name] = node_id
             else:
@@ -118,11 +118,6 @@ class RandomNetworkGenerator:
 
         return node_id
 
-    def _create_supplement_node(self, node_type: str) -> str:
-        """Create a supplement node."""
-        node_id = str(uuid.uuid4())
-        return self._create_core_node(node_type, node_id)
-
     def _create_edge(self, source_id: str, target_id: str, edge_type: str) -> None:
         """Create an edge between two nodes."""
         # Check if edge already exists
@@ -135,9 +130,7 @@ class RandomNetworkGenerator:
             "created_at": self.timestamp,
             "updated_at": self.timestamp,
         }
-        for feature_name, feature_type in self.schema["edges"][edge_type][
-            "features"
-        ].items():
+        for feature_name, feature_type in self.schema["edges"][edge_type]["features"].items():
             properties[feature_name] = self.generate_random_value(feature_type)
 
         operation = {
@@ -158,165 +151,132 @@ class RandomNetworkGenerator:
         # Store edge instance
         self.edge_instances[edge_type].add(edge_key)
 
+    def _create_node_hierarchy(self, node_type: str, node_id: str, nodes_per_type: Dict[str, int], parent_id: Optional[str] = None) -> List[str]:
+        """Create node hierarchy in DFS manner. Returns list of created node IDs."""
+        created_nodes = []
+        count = nodes_per_type.get(node_type, 0)
+        if count <= 0:
+            return created_nodes
+
+        # Create nodes
+        for i in range(count):
+            current_id = f"{node_id}-{i+1}" if node_id else str(i+1)
+            self._create_core_node(node_type, current_id)
+            created_nodes.append(current_id)
+
+            # Create edge from parent if it exists
+            if parent_id:
+                parent_edges = self._get_parent_types_and_edges(node_type)
+                for parent_type, edge_type in parent_edges:
+                    self._create_edge(parent_id, current_id, edge_type)
+
+            # Get child types and create their nodes
+            child_types = self._get_child_types_and_edges(node_type)
+            for child_type, edge_type in child_types:
+                if child_type in self.core_nodes:
+                    child_nodes = self._create_node_hierarchy(child_type, current_id, nodes_per_type, current_id)
+                    # Create edges to children
+                    for child_id in child_nodes:
+                        self._create_edge(current_id, child_id, edge_type)
+
+        return created_nodes
+
     def create_network(self, nodes_per_type: Dict[str, int]) -> List[Dict[str, Any]]:
-        """Generate network with reversed hierarchical IDs (leaf nodes get simple IDs)."""
+        """Generate network in DFS manner with proper node count relationships."""
         self.operations = []
         self.node_instances = {}
         self.edge_instances = defaultdict(set)
 
-        # Process core nodes in reversed topological order (leaf to root)
+        # Get topology to find root nodes (BusinessUnit)
         topology = self._get_core_topology()
-        node_mapping = defaultdict(dict)  # Maps child ID to parent IDs
+        root_types = [node_type for node_type in topology if not any(
+            edge["target"] == node_type for edge in self.schema["edges"].values()
+            if edge["source"] in self.core_nodes and edge["target"] in self.core_nodes
+        )]
 
-        for node_type in topology:
+        # Create core hierarchy starting from root (BusinessUnit)
+        for root_type in root_types:
+            if nodes_per_type.get(root_type, 0) > 0:
+                self._create_node_hierarchy(root_type, "", nodes_per_type)
+
+        # Create supplement nodes
+        for node_type in self.supplement_nodes:
             count = nodes_per_type.get(node_type, 0)
             if count <= 0:
                 continue
 
-            child_info = self._get_child_type_and_edge(node_type)
+            # Create supplement nodes
+            supplement_nodes = []
+            for i in range(count):
+                node_id = str(i+1)
+                self._create_core_node(node_type, node_id)
+                supplement_nodes.append(node_id)
 
-            if child_info is None:
-                # Leaf nodes - simple numbering
-                for i in range(1, count + 1):
-                    node_id = str(i)
-                    self._create_core_node(node_type, node_id)
-                    node_mapping[node_type][node_id] = []
-            else:
-                child_type, edge_type = child_info
-                # Calculate how many parents each child should have
-                total_children = len(self.node_instances[child_type])
-                parents_per_child = max(1, count // total_children)
-                extra = 1 if count % total_children > 0 else 0
-
-                # Create parent nodes for each child
-                for child_id in self.node_instances[child_type]:
-                    for i in range(1, parents_per_child + extra + 1):
-                        parent_id = f"{i}-{child_id}"
-                        self._create_core_node(node_type, parent_id)
-                        node_mapping[node_type][parent_id] = [child_id]
-                        self._create_edge(parent_id, child_id, edge_type)
-
-        # Handle supplement nodes
-        supplement_node_ids = {}  # Store created supplement node IDs by type
-        for node_type in self.supplement_nodes:
-            count = nodes_per_type.get(node_type, 0)
-            supplement_node_ids[node_type] = []
-            for _ in range(count):
-                node_id = self._create_supplement_node(node_type)
-                supplement_node_ids[node_type].append(node_id)
-
-        # Create connections for supplement nodes
-        for source_type, source_ids in supplement_node_ids.items():
-            valid_edges = {
-                edge_type: edge_info
-                for edge_type, edge_info in self.schema["edges"].items()
-                if edge_info["source"] == source_type
-            }
-
-            for source_id in source_ids:
-                for edge_type, edge_info in valid_edges.items():
+            # Create edges for supplement nodes
+            for edge_type, edge_info in self.schema["edges"].items():
+                if edge_info["source"] == node_type:
                     target_type = edge_info["target"]
-                    valid_targets = []
-
-                    # Handle connections to core nodes
                     if target_type in self.node_instances:
-                        valid_targets.extend(
-                            node_id
-                            for node_id, node in self.node_instances[
-                                target_type
-                            ].items()
-                            if node["payload"]["node_type"] == target_type
-                        )
+                        target_nodes = list(self.node_instances[target_type].keys())
+                        for source_id in supplement_nodes:
+                            for target_id in target_nodes:
+                                self._create_edge(source_id, target_id, edge_type)
 
-                    # Handle connections to other supplement nodes
-                    if target_type in supplement_node_ids:
-                        valid_targets.extend(
-                            node_id
-                            for node_id in supplement_node_ids[target_type]
-                            if node_id != source_id  # Prevent self-loops
-                        )
-
-                    if valid_targets:
-                        # Connect to random target nodes (1-3 connections)
-                        target_ids = random.sample(
-                            valid_targets,
-                            min(random.randint(1, 3), len(valid_targets)),
-                        )
-                        for target_id in target_ids:
-                            self._create_edge(source_id, target_id, edge_type)
-
-        if not self.is_step_update:
-            self.timestamp += 1
         return self.operations
 
-    def generate_updates(
-        self, node_updates: int, edge_updates: int
-    ) -> List[Dict[str, Any]]:
-        """Generate random updates for existing nodes and edges."""
-        if not self.node_instances or not self.edge_instances:
-            raise ValueError("Network must be created before generating updates")
+    def generate_updates(self, node_updates: int = 0, edge_updates: int = 0) -> List[Dict[str, Any]]:
+        """Generate random update operations."""
+        self.operations = []
+        self.is_step_update = True
 
-        update_operations = []
-        UPDATE_PROBABILITY = 0.3  # 30% chance for each property to be updated
-
-        # Generate node updates
+        # Node updates
         for _ in range(node_updates):
+            if not self.node_instances:
+                continue
+
+            # Select random node
             node_type = random.choice(list(self.node_instances.keys()))
             if not self.node_instances[node_type]:
                 continue
             node_id = random.choice(list(self.node_instances[node_type].keys()))
 
-            # Generate new random properties only with probability
-            properties = {"updated_at": self.timestamp}
-            for feature_name, feature_type in self.schema["nodes"][node_type][
-                "features"
-            ].items():
-                if (
-                    feature_name not in ["id", "created_at", "updated_at"]
-                    and random.random() < UPDATE_PROBABILITY
-                ):
-                    properties[feature_name] = self.generate_random_value(feature_type)
+            # Generate new random values for features
+            updates = {"properties": {}}
+            for feature_name, feature_type in self.schema["nodes"][node_type]["features"].items():
+                if feature_name != "id" and random.random() < 0.5:  # 50% chance to update each feature
+                    updates["properties"][feature_name] = self.generate_random_value(feature_type)
 
-            # Only create update operation if there are properties to update
-            if len(properties) > 1:  # More than just updated_at
+            if updates["properties"]:
                 operation = {
                     "action": "update",
                     "type": "schema",
                     "payload": {
                         "node_id": node_id,
-                        "updates": {"properties": properties},
+                        "updates": updates
                     },
                     "timestamp": self.timestamp,
                 }
-                if self.is_step_update:
-                    self.timestamp += 1
-                update_operations.append(operation)
+                self.operations.append(operation)
+                self.timestamp += 1
 
-        # Generate edge updates
+        # Edge updates
         for _ in range(edge_updates):
             if not self.edge_instances:
                 continue
+
+            # Select random edge
             edge_type = random.choice(list(self.edge_instances.keys()))
             if not self.edge_instances[edge_type]:
                 continue
+            source_id, target_id, _ = random.choice(list(self.edge_instances[edge_type]))
 
-            source_id, target_id, _ = random.choice(
-                list(self.edge_instances[edge_type])
-            )
+            # Generate new random values for features
+            updates = {"properties": {}}
+            for feature_name, feature_type in self.schema["edges"][edge_type]["features"].items():
+                if random.random() < 0.5:  # 50% chance to update each feature
+                    updates["properties"][feature_name] = self.generate_random_value(feature_type)
 
-            # Update edge properties with probability
-            properties = {"updated_at": self.timestamp}
-            for feature_name, feature_type in self.schema["edges"][edge_type][
-                "features"
-            ].items():
-                if (
-                    feature_name not in ["id", "created_at", "updated_at"]
-                    and random.random() < UPDATE_PROBABILITY
-                ):
-                    properties[feature_name] = self.generate_random_value(feature_type)
-
-            # Only create update operation if there are properties to update
-            if len(properties) > 1:  # More than just updated_at
+            if updates["properties"]:
                 operation = {
                     "action": "update",
                     "type": "schema",
@@ -324,38 +284,30 @@ class RandomNetworkGenerator:
                         "source_id": source_id,
                         "target_id": target_id,
                         "edge_type": edge_type,
-                        "updates": {"properties": properties},
+                        "updates": updates
                     },
                     "timestamp": self.timestamp,
                 }
-                if self.is_step_update:
-                    self.timestamp += 1
-                update_operations.append(operation)
+                self.operations.append(operation)
+                self.timestamp += 1
 
-        if not self.is_step_update:
-            self.timestamp += 1
-        return update_operations
+        return self.operations
 
-    def generate_deletions(
-        self, node_deletions: int, edge_deletions: int
-    ) -> List[Dict[str, Any]]:
-        """Generate random deletions for existing nodes and edges."""
-        if not self.node_instances or not self.edge_instances:
-            raise ValueError("Network must be created before generating deletions")
+    def generate_deletions(self, node_deletions: int = 0, edge_deletions: int = 0) -> List[Dict[str, Any]]:
+        """Generate random deletion operations."""
+        self.operations = []
+        self.is_step_update = True
 
-        delete_operations = []
-
-        # Generate edge deletions first to avoid orphaned edges
+        # Edge deletions
         for _ in range(edge_deletions):
             if not self.edge_instances:
                 continue
+
+            # Select random edge
             edge_type = random.choice(list(self.edge_instances.keys()))
             if not self.edge_instances[edge_type]:
                 continue
-
-            source_id, target_id, _ = random.choice(
-                list(self.edge_instances[edge_type])
-            )
+            source_id, target_id, _ = random.choice(list(self.edge_instances[edge_type]))
 
             operation = {
                 "action": "delete",
@@ -363,55 +315,36 @@ class RandomNetworkGenerator:
                 "payload": {
                     "source_id": source_id,
                     "target_id": target_id,
-                    "edge_type": edge_type,
+                    "edge_type": edge_type
                 },
                 "timestamp": self.timestamp,
             }
-            if self.is_step_update:
-                self.timestamp += 1
-            delete_operations.append(operation)
-
-            # Remove edge from instances
+            self.operations.append(operation)
+            self.timestamp += 1
             self.edge_instances[edge_type].remove((source_id, target_id, edge_type))
 
-        # Generate node deletions (only from supplement nodes)
+        # Node deletions
         for _ in range(node_deletions):
-            if not self.supplement_nodes:
+            if not self.node_instances:
                 continue
 
-            node_type = random.choice(list(self.supplement_nodes.keys()))
-            if not self.node_instances.get(node_type, {}):
+            # Select random node
+            node_type = random.choice(list(self.node_instances.keys()))
+            if not self.node_instances[node_type]:
                 continue
-
             node_id = random.choice(list(self.node_instances[node_type].keys()))
-            node_data = self.node_instances[node_type][node_id]
 
             operation = {
                 "action": "delete",
                 "type": "schema",
                 "payload": {
                     "node_id": node_id,
-                    "node_type": node_type,  # Add node_type to payload
-                    "cascade": False,  # Don't cascade delete to maintain network integrity
+                    "cascade": True  # Delete all connected nodes
                 },
                 "timestamp": self.timestamp,
             }
-            if self.is_step_update:
-                self.timestamp += 1
-            delete_operations.append(operation)
-
-            # Remove node from instances
+            self.operations.append(operation)
+            self.timestamp += 1
             del self.node_instances[node_type][node_id]
 
-            # Remove any associated edges
-            for edge_type in list(self.edge_instances.keys()):
-                self.edge_instances[edge_type] = {
-                    (s, t, e)
-                    for s, t, e in self.edge_instances[edge_type]
-                    if s != node_id and t != node_id
-                }
-
-        if not self.is_step_update:
-            self.timestamp += 1
-
-        return delete_operations
+        return self.operations
