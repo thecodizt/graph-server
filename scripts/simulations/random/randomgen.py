@@ -344,7 +344,7 @@ class RandomNetworkGenerator:
                 operation = self._create_operation("update", {
                     "node_id": node_id,
                     "node_type": node_type,
-                    "updates": updates,
+                    "payload": updates["properties"],
                 })
                 self.operations.append(operation)
                 # Update stored instance
@@ -371,7 +371,7 @@ class RandomNetworkGenerator:
                 "source_id": source_id,
                 "target_id": target_id,
                 "edge_type": edge_type,
-                "updates": updates,
+                "payload": updates["properties"],
             })
             self.operations.append(operation)
 
