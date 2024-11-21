@@ -254,6 +254,7 @@ def process_schema_change(change_data, paths):
                         )
                 elif change_data["action"] == "bulk_update":
                     logger.info("Bulk update")
+                    logger.info(f"Processing Change: {change_data}")
                     for payload in change_data["payload"]:
                         logger.info(f"Processing payload: {payload}")
                         schema_data, state_data = process_schema_update(

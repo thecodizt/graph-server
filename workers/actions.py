@@ -157,7 +157,7 @@ def process_schema_update(
             while retry_count < max_retries:
                 if schema.has_edge(source_id, target_id):
                     # Update edge properties
-                    properties = payload["properties"]
+                    properties = dict(payload.get("properties", {}))
                     if properties:
                         edge_data = schema.get_edge_data(source_id, target_id)
                         edge_data.update(properties)
@@ -185,7 +185,7 @@ def process_schema_update(
                 raise ValueError(f"Node {node_id} does not exist in schema")
 
             # Update node properties
-            properties = payload["properties"]
+            properties = dict(payload.get("properties", {}))
             if properties:
                 for key, value in properties.items():
                     schema.nodes[node_id][key] = value
