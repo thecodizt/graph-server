@@ -221,48 +221,75 @@ def process_schema_change(change_data, paths):
                 schema_data = load_live_schema(paths)
                 state_data = load_live_state(paths)
 
-                if change_data["action"] in ["create", "update", "delete"]:
-                    if change_data["action"] == "create":
-                        schema_data, state_data = process_schema_create(
-                            change_data["payload"],
-                            schema_data,
-                            state_data,
-                            CURRENT_TIMESTAMP,
-                        )
-                    elif change_data["action"] == "update":
-                        schema_data, state_data = process_schema_update(
-                            change_data["payload"],
-                            schema_data,
-                            state_data,
-                            CURRENT_TIMESTAMP,
-                        )
-                    elif change_data["action"] == "delete":
-                        schema_data, state_data = process_schema_delete(
-                            change_data["payload"],
-                            schema_data,
-                            state_data,
-                            CURRENT_TIMESTAMP,
-                        )
-
-                    save_graph(schema_data, paths, is_schema=True)
-                    save_graph(state_data, paths, is_schema=False)
-
-                    logger.info(
-                        f"Current timestamp: {CURRENT_TIMESTAMP}, change timestamp: {change_data['timestamp']}"
+                if change_data["action"] == "create":
+                    schema_data, state_data = process_schema_create(
+                        change_data["payload"],
+                        schema_data,
+                        state_data,
+                        CURRENT_TIMESTAMP,
                     )
-
-                    if CURRENT_TIMESTAMP is None:
-                        CURRENT_TIMESTAMP = change_data["timestamp"]
-
-                    if change_data["timestamp"] != CURRENT_TIMESTAMP:
-                        timestamp = change_data["timestamp"]
-                        save_graph(
-                            schema_data, paths, timestamp=timestamp, is_schema=True
+                elif change_data["action"] == "update":
+                    schema_data, state_data = process_schema_update(
+                        change_data["payload"],
+                        schema_data,
+                        state_data,
+                        CURRENT_TIMESTAMP,
+                    )
+                elif change_data["action"] == "delete":
+                    schema_data, state_data = process_schema_delete(
+                        change_data["payload"],
+                        schema_data,
+                        state_data,
+                        CURRENT_TIMESTAMP,
+                    )
+                elif change_data["action"] == "bulk_create":
+                    logger.info("Bulk create")
+                    for payload in change_data["payload"]:
+                        logger.info(f"Processing payload: {payload}")
+                        schema_data, state_data = process_schema_create(
+                            payload,
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
                         )
-                        save_graph(
-                            state_data, paths, timestamp=timestamp, is_schema=False
+                elif change_data["action"] == "bulk_update":
+                    logger.info("Bulk update")
+                    for payload in change_data["payload"]:
+                        logger.info(f"Processing payload: {payload}")
+                        schema_data, state_data = process_schema_update(
+                            payload,
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
                         )
-                        CURRENT_TIMESTAMP = timestamp
+                elif change_data["action"] == "bulk_delete":
+                    for payload in change_data["payload"]:
+                        schema_data, state_data = process_schema_delete(
+                            payload,
+                            schema_data,
+                            state_data,
+                            CURRENT_TIMESTAMP,
+                        )
+
+                save_graph(schema_data, paths, is_schema=True)
+                save_graph(state_data, paths, is_schema=False)
+
+                logger.info(
+                    f"Current timestamp: {CURRENT_TIMESTAMP}, change timestamp: {change_data['timestamp']}"
+                )
+
+                if CURRENT_TIMESTAMP is None:
+                    CURRENT_TIMESTAMP = change_data["timestamp"]
+
+                if change_data["timestamp"] != CURRENT_TIMESTAMP:
+                    timestamp = change_data["timestamp"]
+                    save_graph(
+                        schema_data, paths, timestamp=timestamp, is_schema=True
+                    )
+                    save_graph(
+                        state_data, paths, timestamp=timestamp, is_schema=False
+                    )
+                    CURRENT_TIMESTAMP = timestamp
 
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)

@@ -42,6 +42,8 @@ def process_schema_create(
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
 
+        logger.info(f"Processing schema create: {payload}")
+
         # Check if this is an edge creation
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]

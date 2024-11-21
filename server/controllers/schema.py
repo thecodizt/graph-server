@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 from ..config import get_paths, redis_client
 from ..models.change import Change
 import time
+import shutil
+import redis
 
 from utils.compression import compress_graph_json
 
@@ -24,6 +26,8 @@ def get_live_schema(version: str = None) -> Dict[str, Any]:
 
 def queue_live_schema_update(update: Change) -> Dict[str, str]:
     logger.info(f"Queueing schema update")
+
+    logger.info(f"Processing Type: {update.type} Action: {update.action} Timestamp: {update.timestamp}")
 
     change_data = {
         "type": update.type,
@@ -65,9 +69,7 @@ def get_live_schema_compressed(version: str = None) -> Dict[str, Any]:
     except FileNotFoundError:
         return {"error": "Live schema not found"}
 
-import os
-import shutil
-import redis
+
 
 def delete_schema(version: str = None):
     paths = get_paths(version)
