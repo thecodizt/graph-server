@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from .routes import (
     archive,
     state,
@@ -17,6 +18,15 @@ def create_app():
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+        expose_headers=["*"],
     )
 
     @app.get("/")

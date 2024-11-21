@@ -9,6 +9,10 @@ router = APIRouter(tags=["schema"])
 def get_live_schema(version: str):
     return schema.get_live_schema(version)
 
+@router.get("/schema/live/{version}/compressed")
+def get_live_schema(version: str):
+    return schema.get_live_schema_compressed(version)
+
 
 @router.post("/schema/live/update")
 def update_live_schema(update: Change):
@@ -18,3 +22,7 @@ def update_live_schema(update: Change):
 @router.post("/schema/live/update/bulk")
 def update_live_schema_bulk(updates: list[Change]):
     return schema.queue_live_schema_update_bulk(updates)
+
+@router.delete("/schema/{version}")
+def delete_schema(version: str):
+    return schema.delete_schema(version)

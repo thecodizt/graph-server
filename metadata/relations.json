@@ -22,6 +22,7 @@
 				"id": "string",
 				"name": "string",
 				"location": "string",
+				"quality": "float",
 				"reliability": "float",
 				"size": "string"
 			}
