@@ -72,7 +72,6 @@ def write_to_postgres(timestamp, change_data=None):
 
         postgres_conn.commit()
         cursor.close()
-        logger.info(f"Successfully wrote delta for timestamp {timestamp}")
 
     except Exception as e:
         logger.error(f"Error writing delta to postgres: {str(e)}")
@@ -94,10 +93,6 @@ def main_worker():
             if not version:
                 logger.warning("No version specified in payload")
                 continue
-
-            logger.info(
-                f"Processing Type: {change_data['type']} Action: {change_data['action']} Version: {version} Timestamp: {change_data['timestamp']}"
-            )
 
             # Get versioned paths for this change
             paths = get_paths(version)
@@ -155,9 +150,6 @@ def save_native_format(graph: nx.DiGraph, timestamp: int, path: str):
         prettyprint=True,
     )
 
-    logger.info(f"Successfully wrote graph to {GRAPHML_PATH}")
-
-
 def save_graph(
     graph: nx.DiGraph,
     paths: Dict[str, str],
@@ -207,16 +199,12 @@ def process_schema_change(change_data, paths):
 
     # Create lock file if it doesn't exist
     if not os.path.exists(lock_file):
-        logger.info("Creating Lock")
         open(lock_file, "w").close()
 
     try:
-        logger.info("Accessing lock")
         with open(lock_file, "r") as lock:
             # Get an exclusive lock for the entire schema change process
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            logger.info("Lock acquired")
-            logger.info(f"Processing schema change: {change_data['timestamp']}")
             try:
                 schema_data = load_live_schema(paths)
                 state_data = load_live_state(paths)
@@ -243,9 +231,7 @@ def process_schema_change(change_data, paths):
                         CURRENT_TIMESTAMP,
                     )
                 elif change_data["action"] == "bulk_create":
-                    logger.info("Bulk create")
                     for payload in change_data["payload"]:
-                        logger.info(f"Processing payload: {payload}")
                         schema_data, state_data = process_schema_create(
                             payload,
                             schema_data,
@@ -253,10 +239,7 @@ def process_schema_change(change_data, paths):
                             CURRENT_TIMESTAMP,
                         )
                 elif change_data["action"] == "bulk_update":
-                    logger.info("Bulk update")
-                    logger.info(f"Processing Change: {change_data}")
                     for payload in change_data["payload"]:
-                        logger.info(f"Processing payload: {payload}")
                         schema_data, state_data = process_schema_update(
                             payload,
                             schema_data,
@@ -274,10 +257,6 @@ def process_schema_change(change_data, paths):
 
                 save_graph(schema_data, paths, is_schema=True)
                 save_graph(state_data, paths, is_schema=False)
-
-                logger.info(
-                    f"Current timestamp: {CURRENT_TIMESTAMP}, change timestamp: {change_data['timestamp']}"
-                )
 
                 if CURRENT_TIMESTAMP is None:
                     CURRENT_TIMESTAMP = change_data["timestamp"]

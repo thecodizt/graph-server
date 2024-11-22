@@ -42,8 +42,6 @@ def process_schema_create(
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
 
-        logger.info(f"Processing schema create: {payload}")
-
         # Check if this is an edge creation
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]
@@ -55,8 +53,6 @@ def process_schema_create(
             if not schema.has_node(target_id):
                 raise ValueError(f"Target node {target_id} does not exist in schema")
 
-            logger.info(f"Processing edge create: {source_id} -> {target_id}")
-
             # Add the edge with its properties
             schema.add_edge(
                 source_id,
@@ -65,12 +61,9 @@ def process_schema_create(
                 **payload.get("properties", {}),
             )
 
-            logger.info(f"Edge create complete: {source_id} -> {target_id}")
-
         # Node creation
         else:
             node_id = payload["node_id"]
-            logger.info(f"Processing node create: {node_id}")
 
             # Verify node doesn't already exist
             if schema.has_node(node_id):
@@ -83,12 +76,8 @@ def process_schema_create(
 
             # if units_in_chain is specified, add instances to state graph
             properties = dict(payload.get("properties", {}))
-            logger.info(f"Available properties: {properties.keys()}")
             if "units_in_chain" in properties:
                 units = properties.get("units_in_chain", 0)  # Default to 0 if None
-                logger.info(
-                    f"Adding instances to state graph for {node_id} with {units} units"
-                )
                 try:
                     units = int(units) if units is not None else 0
                 except (ValueError, TypeError):
@@ -116,8 +105,6 @@ def process_schema_create(
                     created_at=timestamp,
                     expiry=expiry,
                 )
-
-            logger.info(f"Node create complete for {node_id}")
 
         return schema, state
 
@@ -149,8 +136,6 @@ def process_schema_update(
             target_id = payload["target_id"]
             edge_type = payload["edge_type"]
 
-            logger.info(f"Processing edge update: {source_id} -> {target_id}")
-
             # Add retry logic for edge existence check
             max_retries = 3
             retry_count = 0
@@ -162,7 +147,6 @@ def process_schema_update(
                         edge_data = schema.get_edge_data(source_id, target_id)
                         edge_data.update(properties)
                         schema.add_edge(source_id, target_id, **edge_data)
-                    logger.info(f"Edge update complete: {source_id} -> {target_id}")
                     break
                 retry_count += 1
                 if retry_count < max_retries:
@@ -179,7 +163,6 @@ def process_schema_update(
         # Node update
         else:
             node_id = payload["node_id"]
-            logger.info(f"Processing node update: {node_id}")
 
             if not schema.has_node(node_id):
                 raise ValueError(f"Node {node_id} does not exist in schema")
@@ -193,9 +176,6 @@ def process_schema_update(
                 # Handle units_in_chain updates for state graph
                 if "units_in_chain" in properties:
                     units = properties.get("units_in_chain")
-                    logger.info(
-                        f"Updating instances to state graph for {node_id} to {units} units"
-                    )
 
                     if units:
                         try:
@@ -218,8 +198,6 @@ def process_schema_update(
                         created_at=timestamp,
                         expiry=expiry,
                     )
-
-            logger.info(f"Node update complete for {node_id}")
 
         return schema, state
 
@@ -261,8 +239,6 @@ def process_schema_delete(
             source_id = payload["source_id"]
             target_id = payload["target_id"]
 
-            logger.info(f"Processing edge delete: {source_id} -> {target_id}")
-
             if not schema.has_edge(source_id, target_id):
                 raise ValueError(f"Edge from {source_id} to {target_id} does not exist")
 
@@ -274,13 +250,9 @@ def process_schema_delete(
             else:
                 schema.remove_edge(source_id, target_id)
 
-            logger.info(f"Edge delete complete: {source_id} -> {target_id}")
-
         # Node deletion
         else:
             node_id = payload["node_id"]
-            logger.info(f"Processing node delete: {node_id}")
-
             if not schema.has_node(node_id):
                 raise ValueError(f"Node {node_id} does not exist in schema")
 
@@ -303,8 +275,6 @@ def process_schema_delete(
 
             # Remove the target node and all its edges
             schema.remove_node(node_id)
-
-            logger.info(f"Node delete complete: {node_id}")
 
         return schema, state
 
@@ -375,8 +345,6 @@ def update_state_instances(
             ]  # Get the earliest expiring node
             state_data.remove_node(node_to_remove)
 
-        logger.info(f"Removed {excess_count} of {type} instances from state graph")
-
     elif current_count < target_count:
         # Add instances
         for i in range(target_count - current_count):
@@ -389,11 +357,5 @@ def update_state_instances(
                 created_at=created_at,
                 expiry=expiry,
             )
-        logger.info(
-            f"Added {target_count - current_count} of {type} instances to state graph"
-        )
-    else:
-        # No need to add or remove instances
-        logger.info(f"No need to add or remove instances for {type}")
 
     return state_data

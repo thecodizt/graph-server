@@ -25,8 +25,6 @@ def get_live_schema(version: str = None) -> Dict[str, Any]:
 
 
 def queue_live_schema_update(update: Change) -> Dict[str, str]:
-    logger.info(f"Queueing schema update")
-
     logger.info(f"Processing Type: {update.type} Action: {update.action} Timestamp: {update.timestamp}")
 
     change_data = {
@@ -44,7 +42,7 @@ def queue_live_schema_update(update: Change) -> Dict[str, str]:
 
 
 def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
-    logger.info(f"Queueing schema update bulk")
+    logger.info(f"Bulk Processing Type: {update.type} Action: {update.action} Timestamp: {update.timestamp}")
 
     # Process updates one at a time synchronously
     for update in updates:
@@ -91,26 +89,6 @@ def delete_schema(version: str = None):
     safe_remove_file(f"{paths['LIVESTATE_PATH']}/current_state.json")
     safe_remove_file(f"{paths['LIVESCHEMA_PATH']}/current_schema.json")
     
-    # # 3. Remove archives with error handling
-    # def safe_remove_archives(archive_path):
-    #     try:
-    #         if os.path.exists(archive_path):
-    #             archives = os.listdir(archive_path)
-    #             for archive in archives:
-    #                 full_path = os.path.join(archive_path, archive)
-    #                 try:
-    #                     if os.path.isfile(full_path):
-    #                         os.remove(full_path)
-    #                 except Exception as e:
-    #                     print(f"Failed to remove archive {full_path}: {e}")
-    #     except Exception as e:
-    #         print(f"Failed to list archives in {archive_path}: {e}")
-    
-    # safe_remove_archives(paths["SCHEMAARCHIVE_PATH"])
-    # safe_remove_archives(paths["STATEARCHIVE_PATH"])
-    # safe_remove_archives(paths["NATIVE_FORMAT_PATH"])
-    
-    # 4. Remove directories with error handling
     def safe_remove_directory(dir_path):
         try:
             if os.path.exists(dir_path) and os.path.isdir(dir_path):
