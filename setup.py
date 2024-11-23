@@ -7,7 +7,9 @@ def ensure_server_directories(version="v13"):
         "/app/data/statearchive",
         "/app/data/schemaarchive",
         "/app/data/liveschema",
-        "/app/data/nativeformat"
+        "/app/data/nativeformat",
+        "/app/data/lock",
+        "/app/data/debug_logs"
     ]
     
     # Create base directories

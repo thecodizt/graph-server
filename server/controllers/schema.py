@@ -42,7 +42,7 @@ def queue_live_schema_update(update: Change) -> Dict[str, str]:
 
 
 def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
-    logger.info(f"Bulk Processing Type: {update.type} Action: {update.action} Timestamp: {update.timestamp}")
+    logger.info(f"Bulk Processing Type: {updates[0].type} Action: {updates[0].action} Timestamp: {updates[0].timestamp}")
 
     # Process updates one at a time synchronously
     for update in updates:

@@ -13,14 +13,32 @@ from .actions import process_schema_create, process_schema_update, process_schem
 
 from utils.compression import compress_graph_json, decompress_graph_json
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 from server.config import (
     get_paths,
     redis_client,
     postgres_conn,
+    DEBUG_LOGGING_ENABLED,
+    DEBUG_LOG_FILE,
 )
+
+# Configure root logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure debug logger if enabled
+if DEBUG_LOGGING_ENABLED:
+    os.makedirs(os.path.dirname(DEBUG_LOG_FILE), exist_ok=True)
+    debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
+    debug_handler.setLevel(logging.DEBUG)
+    debug_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    debug_handler.setFormatter(debug_formatter)
+    
+    # Create a separate debug logger instead of using root logger
+    debug_logger = logging.getLogger('debug')
+    debug_logger.addHandler(debug_handler)
+    debug_logger.setLevel(logging.DEBUG)
+    # Prevent debug logs from propagating to parent loggers
+    debug_logger.propagate = False
 
 # Get default paths
 paths = get_paths()
@@ -106,10 +124,10 @@ def main_worker():
 
 def create_initial_schema_and_state(paths):
     schema_data = nx.DiGraph()
-    schema_node_link_data = json_graph.node_link_data(schema_data)
+    schema_node_link_data = json_graph.node_link_data(schema_data, edges="links")
 
     state_data = nx.DiGraph()
-    state_node_link_data = json_graph.node_link_data(state_data)
+    state_node_link_data = json_graph.node_link_data(state_data, edges="links")
 
     # Create initial files if they don't exist
     with open(f"{paths['LIVESCHEMA_PATH']}/current_schema.json", "w") as f:
@@ -122,7 +140,7 @@ def load_live_schema(paths):
     try:
         with open(f"{paths['LIVESCHEMA_PATH']}/current_schema.json", "r") as f:
             schema_node_link_data = json.load(f)
-            return json_graph.node_link_graph(schema_node_link_data)
+            return json_graph.node_link_graph(schema_node_link_data, edges="links")
     except (FileNotFoundError, json.JSONDecodeError):
         create_initial_schema_and_state(paths)
         return load_live_schema(paths)
@@ -132,7 +150,7 @@ def load_live_state(paths):
     try:
         with open(f"{paths['LIVESTATE_PATH']}/current_state.json", "r") as f:
             state_node_link_data = json.load(f)
-            return json_graph.node_link_graph(state_node_link_data)
+            return json_graph.node_link_graph(state_node_link_data, edges="links")
     except (FileNotFoundError, json.JSONDecodeError):
         create_initial_schema_and_state(paths)
         return load_live_state(paths)
@@ -168,7 +186,7 @@ def save_graph(
             filepath = f"{path}/{timestamp}.json"
 
             # Convert graph to node-link format
-            node_link_data = json_graph.node_link_data(graph)
+            node_link_data = json_graph.node_link_data(graph, edges="links")
 
             compressed_data = compress_graph_json(node_link_data)
 
@@ -183,7 +201,7 @@ def save_graph(
             filepath = f"{path}/{name}.json"
 
             # Convert graph to node-link format
-            node_link_data = json_graph.node_link_data(graph)
+            node_link_data = json_graph.node_link_data(graph, edges="links")
 
             # Use safe write with file locking
             safe_write_json(filepath, node_link_data)

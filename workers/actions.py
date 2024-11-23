@@ -4,8 +4,25 @@ from copy import deepcopy
 from typing import Dict, Any, Optional
 import uuid
 import time
+import os
+
+from server.config import get_paths, DEBUG_LOGGING_ENABLED, DEBUG_LOG_FILE
+
+# Get the debug logger
+debug_logger = logging.getLogger('debug')
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Configure debug logger
+if DEBUG_LOGGING_ENABLED:
+    os.makedirs(os.path.dirname(DEBUG_LOG_FILE), exist_ok=True)
+    debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
+    debug_handler.setLevel(logging.DEBUG)
+    debug_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    debug_handler.setFormatter(debug_formatter)
+    debug_logger.addHandler(debug_handler)
+    debug_logger.setLevel(logging.DEBUG)
 
 
 def process_schema_create(
@@ -42,6 +59,9 @@ def process_schema_create(
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
 
+        if DEBUG_LOGGING_ENABLED:
+            debug_logger.debug(f"Processing schema create with payload: {payload}")
+
         # Check if this is an edge creation
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]
@@ -61,6 +81,9 @@ def process_schema_create(
                 **payload.get("properties", {}),
             )
 
+            if DEBUG_LOGGING_ENABLED:
+                debug_logger.debug(f"Creating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}")
+
         # Node creation
         else:
             node_id = payload["node_id"]
@@ -73,6 +96,9 @@ def process_schema_create(
             schema.add_node(
                 node_id, node_type=payload["node_type"], **payload["properties"]
             )
+
+            if DEBUG_LOGGING_ENABLED:
+                debug_logger.debug(f"Creating node {node_id} with attributes: {payload['properties']}")
 
             # if units_in_chain is specified, add instances to state graph
             properties = dict(payload.get("properties", {}))
@@ -130,6 +156,9 @@ def process_schema_update(
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
 
+        if DEBUG_LOGGING_ENABLED:
+            debug_logger.debug(f"Processing schema update with payload: {payload}")
+
         # Check if this is an edge update
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]
@@ -160,6 +189,9 @@ def process_schema_update(
                     f"Edge from {source_id} to {target_id} does not exist after {max_retries} retries"
                 )
 
+            if DEBUG_LOGGING_ENABLED:
+                debug_logger.debug(f"Updating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}")
+
         # Node update
         else:
             node_id = payload["node_id"]
@@ -172,6 +204,9 @@ def process_schema_update(
             if properties:
                 for key, value in properties.items():
                     schema.nodes[node_id][key] = value
+
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(f"Updating node {node_id} with attributes: {properties}")
 
                 # Handle units_in_chain updates for state graph
                 if "units_in_chain" in properties:
@@ -234,6 +269,9 @@ def process_schema_delete(
         schema = deepcopy(schema_data)
         state = deepcopy(state_data)
 
+        if DEBUG_LOGGING_ENABLED:
+            debug_logger.debug(f"Processing schema delete with payload: {payload}")
+
         # Check if this is an edge deletion
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]
@@ -249,6 +287,9 @@ def process_schema_delete(
                     schema.remove_edge(source_id, target_id)
             else:
                 schema.remove_edge(source_id, target_id)
+
+            if DEBUG_LOGGING_ENABLED:
+                debug_logger.debug(f"Deleting edge from {source_id} to {target_id}")
 
         # Node deletion
         else:
@@ -275,6 +316,9 @@ def process_schema_delete(
 
             # Remove the target node and all its edges
             schema.remove_node(node_id)
+
+            if DEBUG_LOGGING_ENABLED:
+                debug_logger.debug(f"Deleting node {node_id}")
 
         return schema, state
 

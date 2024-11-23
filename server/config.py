@@ -25,7 +25,11 @@ BASE_SCHEMAARCHIVE_PATH = os.environ.get(
 BASE_LIVESCHEMA_PATH = os.environ.get("LIVESCHEMA_PATH", "/app/data/liveschema")
 BASE_NATIVE_FORMAT_PATH = os.environ.get("NATIVE_FORMAT_PATH", "/app/data/nativeformat")
 BASE_LOCK_PATH = os.environ.get("LOCK_PATH", "/app/data/lock")
+BASE_DEBUG_LOGS_PATH = os.environ.get("DEBUG_LOGS_PATH", "/app/data/debug_logs")
 
+# Debug configuration
+DEBUG_LOGGING_ENABLED = os.environ.get("DEBUG_LOGGING_ENABLED", "true").lower() == "true"
+DEBUG_LOG_FILE = os.path.join(BASE_DEBUG_LOGS_PATH, "debug.log")
 
 # Get versioned paths
 def get_paths(version: str = None):
