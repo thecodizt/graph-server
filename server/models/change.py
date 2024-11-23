@@ -3,8 +3,16 @@ from typing import Literal, Optional, Dict, Union
 
 
 class Change(BaseModel):
-    action: Literal["create", "delete", "update", "bulk_create", "bulk_delete", "bulk_update"]
+    action: Literal[
+        "create",
+        "delete",
+        "update",
+        "bulk_create",
+        "bulk_delete",
+        "bulk_update",
+        "direct_create",
+    ]
     type: Literal["schema", "state"]
     timestamp: int
-    payload: Union[Dict, list[Dict]] 
+    payload: Union[Dict, list[Dict]]
     version: Optional[str] = None

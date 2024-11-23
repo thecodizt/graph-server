@@ -9,7 +9,12 @@ from typing import Optional, Dict, Any
 import fcntl
 from uuid import uuid4
 
-from .actions import process_schema_create, process_schema_update, process_schema_delete
+from .actions import (
+    process_schema_create,
+    process_schema_update,
+    process_schema_delete,
+    process_schema_create_direct,
+)
 
 from utils.compression import compress_graph_json, decompress_graph_json
 
@@ -30,11 +35,13 @@ if DEBUG_LOGGING_ENABLED:
     os.makedirs(os.path.dirname(DEBUG_LOG_FILE), exist_ok=True)
     debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
     debug_handler.setLevel(logging.DEBUG)
-    debug_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    debug_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     debug_handler.setFormatter(debug_formatter)
-    
+
     # Create a separate debug logger instead of using root logger
-    debug_logger = logging.getLogger('debug')
+    debug_logger = logging.getLogger("debug")
     debug_logger.addHandler(debug_handler)
     debug_logger.setLevel(logging.DEBUG)
     # Prevent debug logs from propagating to parent loggers
@@ -168,6 +175,7 @@ def save_native_format(graph: nx.DiGraph, timestamp: int, path: str):
         prettyprint=True,
     )
 
+
 def save_graph(
     graph: nx.DiGraph,
     paths: Dict[str, str],
@@ -179,7 +187,7 @@ def save_graph(
             if is_schema:
                 path = f"{paths['SCHEMAARCHIVE_PATH']}"
 
-                save_native_format(graph, timestamp, paths["NATIVE_FORMAT_PATH"])
+                # save_native_format(graph, timestamp, paths["NATIVE_FORMAT_PATH"])
             else:
                 path = f"{paths['STATEARCHIVE_PATH']}"
             os.makedirs(path, exist_ok=True)
@@ -272,6 +280,13 @@ def process_schema_change(change_data, paths):
                             state_data,
                             CURRENT_TIMESTAMP,
                         )
+                elif change_data["action"] == "direct_create":
+                    schema_data, state_data = process_schema_create_direct(
+                        change_data["payload"],
+                        schema_data,
+                        state_data,
+                        CURRENT_TIMESTAMP,
+                    )
 
                 save_graph(schema_data, paths, is_schema=True)
                 save_graph(state_data, paths, is_schema=False)
@@ -281,12 +296,8 @@ def process_schema_change(change_data, paths):
 
                 if change_data["timestamp"] != CURRENT_TIMESTAMP:
                     timestamp = change_data["timestamp"]
-                    save_graph(
-                        schema_data, paths, timestamp=timestamp, is_schema=True
-                    )
-                    save_graph(
-                        state_data, paths, timestamp=timestamp, is_schema=False
-                    )
+                    save_graph(schema_data, paths, timestamp=timestamp, is_schema=True)
+                    save_graph(state_data, paths, timestamp=timestamp, is_schema=False)
                     CURRENT_TIMESTAMP = timestamp
 
             finally:

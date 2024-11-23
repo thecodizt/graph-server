@@ -9,7 +9,7 @@ import os
 from server.config import get_paths, DEBUG_LOGGING_ENABLED, DEBUG_LOG_FILE
 
 # Get the debug logger
-debug_logger = logging.getLogger('debug')
+debug_logger = logging.getLogger("debug")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -19,7 +19,9 @@ if DEBUG_LOGGING_ENABLED:
     os.makedirs(os.path.dirname(DEBUG_LOG_FILE), exist_ok=True)
     debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
     debug_handler.setLevel(logging.DEBUG)
-    debug_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    debug_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     debug_handler.setFormatter(debug_formatter)
     debug_logger.addHandler(debug_handler)
     debug_logger.setLevel(logging.DEBUG)
@@ -82,7 +84,9 @@ def process_schema_create(
             )
 
             if DEBUG_LOGGING_ENABLED:
-                debug_logger.debug(f"Creating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}")
+                debug_logger.debug(
+                    f"Creating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}"
+                )
 
         # Node creation
         else:
@@ -98,7 +102,9 @@ def process_schema_create(
             )
 
             if DEBUG_LOGGING_ENABLED:
-                debug_logger.debug(f"Creating node {node_id} with attributes: {payload['properties']}")
+                debug_logger.debug(
+                    f"Creating node {node_id} with attributes: {payload['properties']}"
+                )
 
             # if units_in_chain is specified, add instances to state graph
             properties = dict(payload.get("properties", {}))
@@ -190,7 +196,9 @@ def process_schema_update(
                 )
 
             if DEBUG_LOGGING_ENABLED:
-                debug_logger.debug(f"Updating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}")
+                debug_logger.debug(
+                    f"Updating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}"
+                )
 
         # Node update
         else:
@@ -206,7 +214,9 @@ def process_schema_update(
                     schema.nodes[node_id][key] = value
 
                 if DEBUG_LOGGING_ENABLED:
-                    debug_logger.debug(f"Updating node {node_id} with attributes: {properties}")
+                    debug_logger.debug(
+                        f"Updating node {node_id} with attributes: {properties}"
+                    )
 
                 # Handle units_in_chain updates for state graph
                 if "units_in_chain" in properties:
@@ -403,3 +413,81 @@ def update_state_instances(
             )
 
     return state_data
+
+
+def process_schema_create_direct(
+    payload: Any, schema_data: nx.DiGraph, state_data: nx.DiGraph, timestamp: int
+) -> tuple[nx.DiGraph, nx.DiGraph]:
+    """
+    Process direct schema creation from a node-link format payload.
+    Also updates state graph for nodes with units_in_chain property.
+
+    Args:
+        payload: Node-link format graph data
+        schema_data: Current schema graph
+        state_data: Current state graph
+        timestamp: Current timestamp
+
+    Returns:
+        Tuple of (updated schema graph, updated state graph)
+    """
+    try:
+        schema = deepcopy(schema_data)
+        state = deepcopy(state_data)
+
+        if DEBUG_LOGGING_ENABLED:
+            debug_logger.debug(f"Processing schema create direct")
+
+        # Convert payload to networkx graph
+        new_schema = nx.readwrite.json_graph.node_link_graph(
+            payload, directed=True, edges="links"
+        )
+
+        # Update schema with new graph
+        schema = new_schema
+
+        # Process state updates for nodes with units_in_chain
+        for node_id, node_data in schema.nodes(data=True):
+            if "units_in_chain" in node_data:
+                units = node_data.get("units_in_chain", 0)
+                try:
+                    units = int(units) if units is not None else 0
+                except (ValueError, TypeError):
+                    units = 0
+
+                expiry = None
+                if "expiry" in node_data:
+                    expiry_val = node_data.get("expiry", 0)
+                    try:
+                        expiry = (
+                            int(expiry_val)
+                            if expiry_val is not None
+                            else int(time.time()) + 31536000
+                        )  # Default to 1 year from now
+                    except (ValueError, TypeError):
+                        expiry = (
+                            int(time.time()) + 31536000
+                        )  # Default to 1 year from now
+
+                state = update_state_instances(
+                    state_data=state,
+                    parent_id=node_id,
+                    type=node_data.get("node_type", "unknown"),
+                    target_count=units,
+                    created_at=timestamp,
+                    expiry=expiry,
+                )
+
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(
+                        f"Created {units} instances for node {node_id} in state graph"
+                    )
+
+        return schema, state
+
+    except KeyError as e:
+        logger.error(f"Missing required field in create payload: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error processing schema create direct: {str(e)}")
+        raise
