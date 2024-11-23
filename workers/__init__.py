@@ -127,6 +127,18 @@ def main_worker():
 
         else:
             sleep(0.01)  # Wait before checking again
+            
+def direct_create(payload, timestamp, version):
+    change_data = {
+        "timestamp": timestamp,
+        "version": version,
+        "action": "direct_create",
+        "type": "schema",
+        "payload": payload
+    }
+    
+    paths = get_paths(version)
+    process_schema_change(change_data, paths)
 
 
 def create_initial_schema_and_state(paths):
