@@ -6,7 +6,7 @@ def compress_graph_json(graph_data):
         "node_types": {},
         "relationship_types": {},
         "node_values": {},
-        "link_values": [],
+        "link_values": {},
     }
 
     # Compress nodes
@@ -30,9 +30,10 @@ def compress_graph_json(graph_data):
         # Store keys for this relationship type if we haven't seen it before
         if rel_type not in compressed["relationship_types"]:
             compressed["relationship_types"][rel_type] = list(link.keys())
+            compressed["link_values"][rel_type] = []
 
         # Store just the values in order
-        compressed["link_values"].append(
+        compressed["link_values"][rel_type].append(
             [link[key] for key in compressed["relationship_types"][rel_type]]
         )
 
@@ -55,10 +56,10 @@ def decompress_graph_json(compressed_data):
             decompressed["nodes"].append(node)
 
     # Decompress links
-    for values in compressed_data["link_values"]:
-        rel_type = values[0]  # Assuming relationship_type is always first
-        keys = compressed_data["relationship_types"][rel_type]
-        link = dict(zip(keys, values))
-        decompressed["links"].append(link)
+    for rel_type, values_list in compressed_data["link_values"].items():
+        for values in values_list:
+            keys = compressed_data["relationship_types"][rel_type]
+            link = dict(zip(keys, values))
+            decompressed["links"].append(link)
 
     return decompressed
