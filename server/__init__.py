@@ -16,8 +16,9 @@ def create_app():
         title="Graph Server",
         description="Server for the Graph",
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        openapi_url="/api/openapi.json",
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
     )
 
     app.add_middleware(
@@ -29,13 +30,13 @@ def create_app():
         expose_headers=["*"],
     )
 
-    @app.get("/")
+    @app.get("/api")
     async def root():
         return {"message": "Server is running"}
 
     # Include routers
-    app.include_router(archive.router)
-    app.include_router(state.router)
-    app.include_router(schema.router)
+    app.include_router(archive.router, prefix="/api")
+    app.include_router(state.router, prefix="/api")
+    app.include_router(schema.router, prefix="/api")
 
     return app
