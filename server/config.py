@@ -16,6 +16,14 @@ def get_versioned_path(base_path: str, version: str = None) -> str:
     return os.path.join(base_path, version)
 
 
+def get_versioned_path_readonly(base_path: str, version: str = None) -> str:
+    """Get versioned path without creating directories. Returns None if version directory doesn't exist."""
+    if version is None:
+        version = DEFAULT_VERSION
+    version_path = os.path.join(base_path, version)
+    return version_path if os.path.exists(version_path) else None
+
+
 # Base paths
 BASE_LIVESTATE_PATH = os.environ.get("LIVESTATE_PATH", "/app/data/livestate")
 BASE_STATEARCHIVE_PATH = os.environ.get("STATEARCHIVE_PATH", "/app/data/statearchive")
@@ -42,6 +50,24 @@ def get_paths(version: str = None):
         "LOCK_PATH": get_versioned_path(BASE_LOCK_PATH, version),
     }
 
+def get_paths_readonly(version: str = None):
+    """
+    Get versioned paths without creating directories. Returns None for paths where version doesn't exist.
+    Use this for read-only operations.
+    """
+    paths = {}
+    for name, base_path in [
+        ("LIVESTATE_PATH", BASE_LIVESTATE_PATH),
+        ("STATEARCHIVE_PATH", BASE_STATEARCHIVE_PATH),
+        ("SCHEMAARCHIVE_PATH", BASE_SCHEMAARCHIVE_PATH),
+        ("LIVESCHEMA_PATH", BASE_LIVESCHEMA_PATH),
+        ("NATIVE_FORMAT_PATH", BASE_NATIVE_FORMAT_PATH),
+        ("LOCK_PATH", BASE_LOCK_PATH),
+    ]:
+        path = get_versioned_path_readonly(base_path, version)
+        paths[name] = path
+    
+    return paths
 
 # Database connections
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
