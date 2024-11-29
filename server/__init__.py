@@ -5,6 +5,7 @@ from .routes import (
     archive,
     state,
     schema,
+    queue,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -38,5 +39,6 @@ def create_app():
     app.include_router(archive.router, prefix="/api")
     app.include_router(state.router, prefix="/api")
     app.include_router(schema.router, prefix="/api")
+    app.include_router(queue.router, prefix="/api")
 
     return app
