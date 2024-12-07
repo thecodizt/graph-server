@@ -1,11 +1,11 @@
 import os
 import json
-from typing import Dict, List
+from typing import Dict, List, Any
 from ..config import get_paths_readonly, DEFAULT_VERSION
 
 DICTS_BASE_PATH = "/app/data/dicts"
 
-async def create_dict(version: str, type_name: str, timestamp: str, dict_data: Dict[str, str]):
+async def create_dict(version: str, type_name: str, timestamp: int, dict_data: Dict[str, Any]):
     base_path = os.path.join(DICTS_BASE_PATH, version, type_name)
     os.makedirs(base_path, exist_ok=True)
     

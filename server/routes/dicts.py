@@ -1,15 +1,15 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, Any
 from ..controllers import dicts
 
 router = APIRouter(tags=["dicts"])
 
 class DictPayload(BaseModel):
     version: str
-    timestamp: str
+    timestamp: int
     type: str
-    dict: Dict[str, str]
+    dict: Dict[str, Any]
 
 @router.post("/dicts")
 async def create_dict(payload: DictPayload):
