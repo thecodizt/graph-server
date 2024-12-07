@@ -19,6 +19,7 @@ RUN mkdir -p /app/data/livestate \
     /app/data/schemaarchive \
     /app/data/liveschema \
     /app/data/nativeformat \
+    /app/data/dicts \
     && chown -R nobody:nogroup /app/data \
     && chmod -R 777 /app/data
 

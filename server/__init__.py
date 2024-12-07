@@ -6,8 +6,8 @@ from .routes import (
     state,
     schema,
     queue,
+    dicts,
 )
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -40,5 +40,6 @@ def create_app():
     app.include_router(state.router, prefix="/api")
     app.include_router(schema.router, prefix="/api")
     app.include_router(queue.router, prefix="/api")
+    app.include_router(dicts.router, prefix="/api")
 
     return app
