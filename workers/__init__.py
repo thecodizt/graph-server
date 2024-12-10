@@ -247,6 +247,15 @@ def process_schema_change(change_data, paths):
                 schema_data = load_live_schema(paths)
                 state_data = load_live_state(paths)
 
+                if CURRENT_TIMESTAMP is None:
+                    CURRENT_TIMESTAMP = change_data["timestamp"]
+
+                if change_data["timestamp"] != CURRENT_TIMESTAMP:
+                    timestamp = change_data["timestamp"]
+                    save_graph(schema_data, paths, timestamp=timestamp, is_schema=True)
+                    save_graph(state_data, paths, timestamp=timestamp, is_schema=False)
+                    CURRENT_TIMESTAMP = timestamp
+
                 if change_data["action"] == "create":
                     schema_data, state_data = process_schema_create(
                         change_data["payload"],
@@ -303,14 +312,7 @@ def process_schema_change(change_data, paths):
                 save_graph(schema_data, paths, is_schema=True)
                 save_graph(state_data, paths, is_schema=False)
 
-                if CURRENT_TIMESTAMP is None:
-                    CURRENT_TIMESTAMP = change_data["timestamp"]
-
-                if change_data["timestamp"] != CURRENT_TIMESTAMP:
-                    timestamp = change_data["timestamp"]
-                    save_graph(schema_data, paths, timestamp=timestamp, is_schema=True)
-                    save_graph(state_data, paths, timestamp=timestamp, is_schema=False)
-                    CURRENT_TIMESTAMP = timestamp
+                
 
             finally:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
