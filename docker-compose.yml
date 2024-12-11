@@ -9,19 +9,17 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-      - ./data/livestate:/app/data/livestate
-      - ./data/statearchive:/app/data/statearchive
-      - ./data/schemaarchive:/app/data/schemaarchive
-      - ./data/liveschema:/app/data/liveschema
-      - ./data/dicts:/app/data/dicts
     depends_on:
       redis:
         condition: service_started
       postgres:
         condition: service_healthy
+      mongo:
+        condition: service_started
     environment:
       - REDIS_URL=redis://redis:6379
       - POSTGRES_URL=postgresql://user:password@postgres:5432/deltachanges
+      - MONGO_URL=mongodb://mongo:27017/graphdb
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -38,7 +36,7 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
     volumes:
-      - ./data/deltachanges:/var/lib/postgresql/data
+      - deltachanges:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -47,31 +45,16 @@ services:
       timeout: 5s
       retries: 5
 
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    command: mongod --wiredTigerCacheSizeGB 1.5
+    environment:
+      - MONGO_INITDB_DATABASE=graphdb
+
 volumes:
   deltachanges:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/deltachanges
-
-  statearchive:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/archive
-
-  schemaarchive:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/schemaarchive
-
-  liveschema:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/liveschema
+  mongodb_data:
