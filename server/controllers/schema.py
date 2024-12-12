@@ -25,28 +25,17 @@ def get_live_schema(version: str = None) -> Dict[str, Any]:
 
 
 def queue_live_schema_update(update: Change) -> Dict[str, str]:
-    logger.info(f"Processing Type: {update.type} Action: {update.action} Timestamp: {update.timestamp}")
+    try:
+        logger.info(f"Received schema update request - Type: {update.type} Action: {update.action}")
+        logger.info(f"Request details - Version: {update.version} Timestamp: {update.timestamp}")
+        
+        if update.action.startswith("bulk_"):
+            logger.warning(f"Received bulk action in single update endpoint: {update.action}")
+            return {
+                "status": "error",
+                "message": f"Bulk actions should use the bulk endpoint. Received: {update.action}"
+            }
 
-    change_data = {
-        "type": update.type,
-        "action": update.action,
-        "payload": update.payload,
-        "timestamp": update.timestamp,
-        "version": update.version,
-    }
-
-    # Synchronous push to Redis
-    redis_client.rpush("changes", json.dumps(change_data))
-
-    return {"status": "Schema update queued"}
-
-
-def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
-    logger.info(f"Bulk Processing Type: {updates[0].type} Action: {updates[0].action} Timestamp: {updates[0].timestamp}")
-
-    # Process updates one at a time synchronously
-    for update in updates:
-        # Synchronous push to Redis
         change_data = {
             "type": update.type,
             "action": update.action,
@@ -55,9 +44,93 @@ def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
             "version": update.version,
         }
 
-        redis_client.rpush("changes", json.dumps(change_data))
+        try:
+            # Log payload size for debugging
+            payload_str = json.dumps(update.payload)
+            logger.info(f"Payload size: {len(payload_str)} bytes")
+            
+            # Validate payload can be serialized
+            json.dumps(change_data)
+            
+            # Synchronous push to Redis
+            redis_client.rpush("changes", json.dumps(change_data))
+            logger.info(f"Successfully queued schema update for version {update.version}")
+            
+            return {"status": "success", "message": "Schema update queued"}
+            
+        except TypeError as e:
+            error_msg = f"JSON serialization error: {str(e)}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+        except redis.RedisError as e:
+            error_msg = f"Redis error: {str(e)}"
+            logger.error(error_msg)
+            return {"status": "error", "message": error_msg}
+            
+    except Exception as e:
+        error_msg = f"Unexpected error processing schema update: {str(e)}"
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
 
-    return {"status": "Schema update bulk queued"}
+
+def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
+    try:
+        if not updates:
+            msg = "Empty updates list provided"
+            logger.error(msg)
+            return {"status": "error", "message": msg}
+            
+        logger.info(f"Received bulk schema update request - {len(updates)} updates")
+        logger.info(f"First update - Type: {updates[0].type} Action: {updates[0].action}")
+        
+        if not updates[0].action.startswith("bulk_"):
+            msg = f"Non-bulk action in bulk endpoint: {updates[0].action}"
+            logger.warning(msg)
+            return {"status": "error", "message": msg}
+
+        success_count = 0
+        errors = []
+
+        for i, update in enumerate(updates, 1):
+            try:
+                change_data = {
+                    "type": update.type,
+                    "action": update.action,
+                    "payload": update.payload,
+                    "timestamp": update.timestamp,
+                    "version": update.version,
+                }
+                
+                # Validate payload can be serialized
+                json.dumps(change_data)
+                
+                # Synchronous push to Redis
+                redis_client.rpush("changes", json.dumps(change_data))
+                success_count += 1
+                
+            except (TypeError, redis.RedisError) as e:
+                error_msg = f"Error processing update {i}: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+
+        logger.info(f"Bulk update complete - {success_count} successful, {len(errors)} failed")
+        
+        if errors:
+            return {
+                "status": "partial_success",
+                "message": f"Processed {success_count}/{len(updates)} updates successfully",
+                "errors": errors
+            }
+        return {
+            "status": "success",
+            "message": f"All {success_count} updates queued successfully"
+        }
+
+    except Exception as e:
+        error_msg = f"Unexpected error processing bulk schema update: {str(e)}"
+        logger.error(error_msg)
+        return {"status": "error", "message": error_msg}
+
 
 def get_live_schema_compressed(version: str = None) -> Dict[str, Any]:
     paths = get_paths(version)
