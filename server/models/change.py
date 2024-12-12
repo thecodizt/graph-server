@@ -21,54 +21,61 @@ class Change(BaseModel):
 
     @validator("action")
     def validate_action(cls, v, values):
-        logger.info(f"Validating action: {v}")
-        return v
+        try:
+            return v
+        except Exception as e:
+            logger.error(f"Invalid action value: {v}. Error: {str(e)}")
+            raise
 
     @validator("type")
     def validate_type(cls, v, values):
-        logger.info(f"Validating type: {v}")
-        return v
+        try:
+            return v
+        except Exception as e:
+            logger.error(f"Invalid type value: {v}. Error: {str(e)}")
+            raise
 
     @validator("timestamp")
     def validate_timestamp(cls, v):
-        logger.info(f"Validating timestamp: {v}")
         if v < 0:
-            msg = f"Invalid timestamp: {v} (must be positive)"
+            msg = f"Invalid timestamp: {v} (must be non-negative)"
             logger.error(msg)
             raise ValueError(msg)
         return v
 
     @validator("payload")
     def validate_payload(cls, v, values):
-        action = values.get("action", "")
-        logger.info(f"Validating payload for action '{action}': {str(v)[:200]}...")  # Log first 200 chars of payload
-        
-        # Validate payload type based on action
-        if action.startswith("bulk_"):
-            if not isinstance(v, list):
-                msg = f"Bulk action '{action}' requires list payload, got {type(v)}"
-                logger.error(msg)
-                raise ValueError(msg)
-            if not v:
-                msg = f"Bulk action '{action}' requires non-empty payload list"
-                logger.error(msg)
-                raise ValueError(msg)
-            logger.info(f"Bulk payload contains {len(v)} items")
-        else:
-            if not isinstance(v, dict):
-                msg = f"Action '{action}' requires dict payload, got {type(v)}"
-                logger.error(msg)
-                raise ValueError(msg)
-            if not v:
-                msg = f"Action '{action}' requires non-empty payload dict"
-                logger.error(msg)
-                raise ValueError(msg)
-        
-        return v
+        try:
+            action = values.get("action", "")
+            
+            # Validate payload type based on action
+            if action.startswith("bulk_"):
+                if not isinstance(v, list):
+                    msg = f"Bulk action '{action}' requires list payload, got {type(v).__name__}"
+                    logger.error(msg)
+                    raise ValueError(msg)
+                if not v:
+                    msg = f"Bulk action '{action}' requires non-empty payload list"
+                    logger.error(msg)
+                    raise ValueError(msg)
+            else:
+                if not isinstance(v, dict):
+                    msg = f"Action '{action}' requires dict payload, got {type(v).__name__}"
+                    logger.error(msg)
+                    raise ValueError(msg)
+                if not v:
+                    msg = f"Action '{action}' requires non-empty payload dict"
+                    logger.error(msg)
+                    raise ValueError(msg)
+            
+            return v
+        except Exception as e:
+            if not isinstance(e, ValueError):  # Don't log twice for our own ValueError
+                logger.error(f"Payload validation error for action '{values.get('action', '')}': {str(e)}")
+            raise
 
     @validator("version", always=True)
     def validate_version(cls, v, values):
-        logger.info(f"Validating version: {v}")
         if v is None:
             logger.warning("No version provided in change request")
         return v
