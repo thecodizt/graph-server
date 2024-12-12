@@ -28,13 +28,6 @@ def queue_live_schema_update(update: Change) -> Dict[str, str]:
     try:
         logger.info(f"Received schema update request - Type: {update.type} Action: {update.action}")
         logger.info(f"Request details - Version: {update.version} Timestamp: {update.timestamp}")
-        
-        if update.action.startswith("bulk_"):
-            logger.warning(f"Received bulk action in single update endpoint: {update.action}")
-            return {
-                "status": "error",
-                "message": f"Bulk actions should use the bulk endpoint. Received: {update.action}"
-            }
 
         change_data = {
             "type": update.type,

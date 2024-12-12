@@ -109,19 +109,33 @@ def process_change(change_data):
     """Process a single change with error handling and retries."""
     try:
         version = change_data.get("version")
+        action = change_data.get("action")
+        timestamp = change_data.get("timestamp")
+        
+        logger.info(f"Processing change - Version: {version}, Action: {action}, Timestamp: {timestamp}")
+        
         if not version:
             logger.warning("No version specified in payload")
             return False
 
         # Get versioned paths for this change
         paths = get_paths(version)
+        logger.info(f"Using paths for version {version}: {paths}")
 
         # Process the change
-        process_schema_change(change_data, paths)
+        logger.info(f"Starting schema change processing for version {version}")
+        process_result = process_schema_change(change_data, paths)
+        if not process_result:
+            logger.error(f"Schema change processing failed for version {version}")
+            return False
+            
+        logger.info(f"Writing to postgres for version {version}")
         write_to_postgres(change_data["timestamp"], change_data)
+        
+        logger.info(f"Successfully processed change for version {version}")
         return True
     except Exception as e:
-        logger.error(f"Error processing change: {str(e)}")
+        logger.error(f"Error processing change: {str(e)}", exc_info=True)
         return False
 
 
@@ -133,10 +147,30 @@ def main_worker():
     processing_queue = "changes_processing"
     main_queue = "changes"
     
+    # Initial Redis check
+    try:
+        redis_client.ping()
+        logger.info("Worker successfully connected to Redis")
+    except redis.RedisError as e:
+        logger.error(f"Worker failed to connect to Redis: {str(e)}")
+        return
+    
     while True:
         try:
+            # Check queue lengths for monitoring
+            main_queue_len = redis_client.llen(main_queue)
+            processing_queue_len = redis_client.llen(processing_queue)
+            
+            # Try to ping Redis to ensure connection is still alive
+            try:
+                redis_client.ping()
+            except redis.RedisError as e:
+                logger.error(f"Lost Redis connection: {str(e)}")
+                sleep(5)  # Wait longer before retry
+                continue
+            
             # Move item from main queue to processing queue with 1 second timeout
-            # BRPOPLPUSH atomically pops from source and pushes to destination
+            logger.debug("Waiting for new items in queue...")
             change_data_raw = redis_client.brpoplpush(
                 main_queue,
                 processing_queue,
@@ -145,29 +179,42 @@ def main_worker():
             
             if not change_data_raw:
                 continue
-                
+            
+            logger.info(f"Received new item from queue (size: {len(change_data_raw)} bytes)")
             # Parse the change data
             try:
                 change_data = json.loads(change_data_raw)
-            except json.JSONDecodeError:
-                logger.error(f"Invalid JSON in change data: {change_data_raw}")
+                version = change_data.get("version", "unknown")
+                action = change_data.get("action", "unknown")
+                logger.info(f"Processing item - Version: {version}, Action: {action}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in change data: {change_data_raw[:200]}... Error: {str(e)}")
+                logger.info("Removing invalid item from processing queue")
                 redis_client.lrem(processing_queue, 0, change_data_raw)
                 continue
                 
             # Process the change
+            start_time = time()
             success = process_change(change_data)
+            duration = time() - start_time
             
             # Remove from processing queue
             if success:
+                logger.info(f"Successfully processed item in {duration:.2f}s - Version: {version}, Action: {action}")
                 redis_client.lrem(processing_queue, 0, change_data_raw)
             else:
+                logger.error(f"Failed to process item - Version: {version}, Action: {action}")
+                logger.info("Moving failed item back to main queue for retry")
                 # If processing failed, move back to main queue for retry
                 redis_client.lrem(processing_queue, 0, change_data_raw)
                 redis_client.rpush(main_queue, change_data_raw)
                 sleep(1)  # Wait before retrying
                 
+        except redis.RedisError as e:
+            logger.error(f"Redis error in worker: {str(e)}", exc_info=True)
+            sleep(5)  # Wait longer for Redis errors
         except Exception as e:
-            logger.error(f"Worker error: {str(e)}")
+            logger.error(f"Unexpected worker error: {str(e)}", exc_info=True)
             sleep(1)  # Wait before continuing
 
 
