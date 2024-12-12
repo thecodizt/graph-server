@@ -8,6 +8,7 @@ import os
 from typing import Optional, Dict, Any
 import fcntl
 from uuid import uuid4
+import redis
 
 from .actions import (
     process_schema_create,
@@ -189,10 +190,11 @@ def main_worker():
             
             # Move item from main queue to processing queue with 1 second timeout
             logger.debug("Waiting for new items in queue...")
-            change_data_raw = redis_client.brpoplpush(
+            change_data_raw = redis_client.lmove(
                 main_queue,
                 processing_queue,
-                timeout=1
+                "LEFT",
+                "RIGHT",
             )
             
             if not change_data_raw:
