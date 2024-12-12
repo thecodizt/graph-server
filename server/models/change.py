@@ -32,7 +32,7 @@ class Change(BaseModel):
     @validator("timestamp")
     def validate_timestamp(cls, v):
         logger.info(f"Validating timestamp: {v}")
-        if v <= 0:
+        if v < 0:
             msg = f"Invalid timestamp: {v} (must be positive)"
             logger.error(msg)
             raise ValueError(msg)
