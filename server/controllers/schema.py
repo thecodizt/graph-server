@@ -151,6 +151,45 @@ def get_live_schema_compressed(version: str = None) -> Dict[str, Any]:
         return {"error": "Live schema not found"}
 
 
+def get_live_schema_stats(version: str = None) -> Dict[str, Any]:
+    """Get statistics about the live schema graph including number of nodes, edges, and file size."""
+    paths = get_paths(version)
+    schema_path = f"{paths['LIVESCHEMA_PATH']}/current_schema.json"
+    
+    try:
+        # Get file size
+        file_size = os.path.getsize(schema_path)
+        
+        # Load the graph data directly to access node_type and relationship_type
+        with open(schema_path, "r") as f:
+            graph_data = json.load(f)
+            
+        stats = {
+            "num_nodes": len(graph_data.get("nodes", [])),
+            "num_edges": len(graph_data.get("links", [])),
+            "file_size_bytes": file_size,
+            "file_size_mb": round(file_size / (1024 * 1024), 2),
+            "node_types": {},
+            "edge_types": {}
+        }
+        
+        # Count node types
+        for node in graph_data.get("nodes", []):
+            node_type = node.get("node_type", "unknown")
+            stats['node_types'][node_type] = stats['node_types'].get(node_type, 0) + 1
+            
+        # Count edge types
+        for link in graph_data.get("links", []):
+            edge_type = link.get("relationship_type", "unknown")
+            stats['edge_types'][edge_type] = stats['edge_types'].get(edge_type, 0) + 1
+            
+        return stats
+    except FileNotFoundError:
+        return {"error": "Live schema not found"}
+    except Exception as e:
+        logger.error(f"Error getting schema stats: {str(e)}")
+        return {"error": f"Failed to get schema stats: {str(e)}"}
+
 
 def delete_schema(version: str = None):
     paths = get_paths(version)

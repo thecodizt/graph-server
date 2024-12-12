@@ -23,6 +23,10 @@ def update_live_schema(update: Change):
 def update_live_schema_bulk(updates: list[Change]):
     return schema.queue_live_schema_update_bulk(updates)
 
+@router.get("/schema/live/{version}/stats")
+def get_live_schema_stats(version: str):
+    return schema.get_live_schema_stats(version)
+
 @router.delete("/schema/{version}")
 def delete_schema(version: str):
     return schema.delete_schema(version)
