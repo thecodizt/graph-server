@@ -27,8 +27,24 @@ from server.config import (
 )
 
 # Configure root logger
-logging.basicConfig(level=logging.INFO)
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+setup_logging()
+
+# Add version filter to add version to all log records
+class VersionFilter(logging.Filter):
+    def filter(self, record):
+        if not hasattr(record, 'version'):
+            record.version = 'N/A'
+        return True
+
 logger = logging.getLogger(__name__)
+logger.addFilter(VersionFilter())
 
 # Configure debug logger if enabled
 if DEBUG_LOGGING_ENABLED:
@@ -36,7 +52,8 @@ if DEBUG_LOGGING_ENABLED:
     debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
     debug_handler.setLevel(logging.DEBUG)
     debug_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        '%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     debug_handler.setFormatter(debug_formatter)
 
@@ -44,6 +61,7 @@ if DEBUG_LOGGING_ENABLED:
     debug_logger = logging.getLogger("debug")
     debug_logger.addHandler(debug_handler)
     debug_logger.setLevel(logging.DEBUG)
+    debug_logger.addFilter(VersionFilter())
     # Prevent debug logs from propagating to parent loggers
     debug_logger.propagate = False
 
@@ -406,41 +424,50 @@ def process_schema_change(change_data, paths):
                 elif action == "bulk_create":
                     bulk_start = time()
                     count = len(change_data["payload"])
+                    logger.info(f"[WORKER] Starting bulk create operation - {count} items")
                     for i, payload in enumerate(change_data["payload"], 1):
-                        item_start = time()
                         schema_data, state_data = process_schema_create(
                             payload,
                             schema_data,
                             state_data,
                             CURRENT_TIMESTAMP,
                         )
-                        log_timing(item_start, f"Processing bulk create item {i}/{count}", version)
+                        if i % 100 == 0:
+                            elapsed = time() - bulk_start
+                            rate = i / elapsed if elapsed > 0 else 0
+                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
                     log_timing(bulk_start, f"Total bulk create processing", version, f"{count} items")
                 elif action == "bulk_update":
                     bulk_start = time()
                     count = len(change_data["payload"])
+                    logger.info(f"[WORKER] Starting bulk update operation - {count} items")
                     for i, payload in enumerate(change_data["payload"], 1):
-                        item_start = time()
                         schema_data, state_data = process_schema_update(
                             payload,
                             schema_data,
                             state_data,
                             CURRENT_TIMESTAMP,
                         )
-                        log_timing(item_start, f"Processing bulk update item {i}/{count}", version)
+                        if i % 100 == 0:
+                            elapsed = time() - bulk_start
+                            rate = i / elapsed if elapsed > 0 else 0
+                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
                     log_timing(bulk_start, f"Total bulk update processing", version, f"{count} items")
                 elif action == "bulk_delete":
                     bulk_start = time()
                     count = len(change_data["payload"])
+                    logger.info(f"[WORKER] Starting bulk delete operation - {count} items")
                     for i, payload in enumerate(change_data["payload"], 1):
-                        item_start = time()
                         schema_data, state_data = process_schema_delete(
                             payload,
                             schema_data,
                             state_data,
                             CURRENT_TIMESTAMP,
                         )
-                        log_timing(item_start, f"Processing bulk delete item {i}/{count}", version)
+                        if i % 100 == 0:
+                            elapsed = time() - bulk_start
+                            rate = i / elapsed if elapsed > 0 else 0
+                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
                     log_timing(bulk_start, f"Total bulk delete processing", version, f"{count} items")
                 elif action == "direct_create":
                     schema_data, state_data = process_schema_create_direct(

@@ -73,19 +73,24 @@ def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
             logger.error(msg)
             return {"status": "error", "message": msg}
             
-        logger.info(f"Received bulk schema update request - {len(updates)} updates")
-        logger.info(f"First update - Type: {updates[0].type} Action: {updates[0].action}")
+        total_updates = len(updates)
+        logger.info(f"Received bulk schema update request - {total_updates} updates")
         
         if not updates[0].action.startswith("bulk_"):
             msg = f"Non-bulk action in bulk endpoint: {updates[0].action}"
             logger.warning(msg)
             return {"status": "error", "message": msg}
 
+        start_time = time.time()
         success_count = 0
         errors = []
+        last_progress_log = 0
 
         for i, update in enumerate(updates, 1):
             try:
+                # Set version for logging context
+                logger.addFilter(lambda record: setattr(record, 'version', update.version))
+                
                 change_data = {
                     "type": update.type,
                     "action": update.action,
@@ -101,26 +106,38 @@ def queue_live_schema_update_bulk(updates: List[Change]) -> Dict[str, str]:
                 redis_client.rpush("changes", json.dumps(change_data))
                 success_count += 1
                 
+                # Log progress every 100 operations
+                if i % 100 == 0 and i != last_progress_log:
+                    elapsed_time = time.time() - start_time
+                    rate = i / elapsed_time if elapsed_time > 0 else 0
+                    logger.info(f"Progress: {i}/{total_updates} updates processed ({(i/total_updates)*100:.1f}%) - Rate: {rate:.1f} ops/sec")
+                    last_progress_log = i
+                
             except (TypeError, redis.RedisError) as e:
-                error_msg = f"Error processing update {i}: {str(e)}"
+                error_time = time.strftime('%Y-%m-%d %H:%M:%S')
+                error_msg = f"Error at {error_time} processing update {i} (version: {update.version}): {str(e)}"
                 logger.error(error_msg)
                 errors.append(error_msg)
 
-        logger.info(f"Bulk update complete - {success_count} successful, {len(errors)} failed")
+        # Final progress log
+        total_time = time.time() - start_time
+        final_rate = total_updates / total_time if total_time > 0 else 0
+        logger.info(f"Bulk update complete - {success_count}/{total_updates} successful, {len(errors)} failed - Total time: {total_time:.1f}s, Avg rate: {final_rate:.1f} ops/sec")
         
         if errors:
             return {
                 "status": "partial_success",
-                "message": f"Processed {success_count}/{len(updates)} updates successfully",
+                "message": f"Processed {success_count}/{total_updates} updates successfully in {total_time:.1f}s",
                 "errors": errors
             }
         return {
             "status": "success",
-            "message": f"All {success_count} updates queued successfully"
+            "message": f"All {success_count} updates queued successfully in {total_time:.1f}s"
         }
 
     except Exception as e:
-        error_msg = f"Unexpected error processing bulk schema update: {str(e)}"
+        error_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        error_msg = f"Unexpected error at {error_time} processing bulk schema update: {str(e)}"
         logger.error(error_msg)
         return {"status": "error", "message": error_msg}
 
