@@ -27,22 +27,26 @@ from server.config import (
     DEBUG_LOG_FILE,
 )
 
+
 # Configure root logger
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+
 setup_logging()
+
 
 # Add version filter to add version to all log records
 class VersionFilter(logging.Filter):
     def filter(self, record):
-        if not hasattr(record, 'version'):
-            record.version = 'N/A'
+        if not hasattr(record, "version"):
+            record.version = "N/A"
         return True
+
 
 logger = logging.getLogger(__name__)
 logger.addFilter(VersionFilter())
@@ -53,8 +57,8 @@ if DEBUG_LOGGING_ENABLED:
     debug_handler = logging.FileHandler(DEBUG_LOG_FILE)
     debug_handler.setLevel(logging.DEBUG)
     debug_formatter = logging.Formatter(
-        '%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        "%(asctime)s.%(msecs)03d [%(levelname)s] [WORKER-%(process)d] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     debug_handler.setFormatter(debug_formatter)
 
@@ -79,6 +83,7 @@ LOCK_PATH = paths["LOCK_PATH"]
 CURRENT_TIMESTAMP = None
 PROCESSING_TIMESTAMPS = {}  # Dict to store version -> timestamp mapping
 PROCESSING_TIMESTAMPS_LOCK = threading.Lock()  # Lock for thread-safe access
+
 
 def write_to_postgres(timestamp, change_data=None):
     try:
@@ -130,9 +135,11 @@ def process_change(change_data):
         version = change_data.get("version")
         action = change_data.get("action")
         timestamp = change_data.get("timestamp")
-        
-        logger.info(f"Processing change - Version: {version}, Action: {action}, Timestamp: {timestamp}")
-        
+
+        logger.info(
+            f"Processing change - Version: {version}, Action: {action}, Timestamp: {timestamp}"
+        )
+
         if not version:
             logger.warning("No version specified in payload")
             return False
@@ -147,10 +154,10 @@ def process_change(change_data):
         if not process_result:
             logger.error(f"Schema change processing failed for version {version}")
             return False
-            
+
         logger.info(f"Writing to postgres for version {version}")
         write_to_postgres(change_data["timestamp"], change_data)
-        
+
         logger.info(f"Successfully processed change for version {version}")
         return True
     except Exception as e:
@@ -161,11 +168,11 @@ def process_change(change_data):
 def main_worker():
     """Main worker function using reliable queue processing."""
     logger.info("Starting main worker")
-    
+
     # Create processing queue if it doesn't exist
     processing_queue = "changes_processing"
     main_queue = "changes"
-    
+
     # Initial Redis check
     try:
         redis_client.ping()
@@ -173,13 +180,13 @@ def main_worker():
     except redis.RedisError as e:
         logger.error(f"Worker failed to connect to Redis: {str(e)}")
         return
-    
+
     while True:
         try:
             # Check queue lengths for monitoring
             main_queue_len = redis_client.llen(main_queue)
             processing_queue_len = redis_client.llen(processing_queue)
-            
+
             # Try to ping Redis to ensure connection is still alive
             try:
                 redis_client.ping()
@@ -187,7 +194,7 @@ def main_worker():
                 logger.error(f"Lost Redis connection: {str(e)}")
                 sleep(5)  # Wait longer before retry
                 continue
-            
+
             # Move item from main queue to processing queue with 1 second timeout
             logger.debug("Waiting for new items in queue...")
             change_data_raw = redis_client.lmove(
@@ -196,11 +203,13 @@ def main_worker():
                 "LEFT",
                 "RIGHT",
             )
-            
+
             if not change_data_raw:
                 continue
-            
-            logger.info(f"Received new item from queue (size: {len(change_data_raw)} bytes)")
+
+            logger.info(
+                f"Received new item from queue (size: {len(change_data_raw)} bytes)"
+            )
             # Parse the change data
             try:
                 change_data = json.loads(change_data_raw)
@@ -208,28 +217,34 @@ def main_worker():
                 action = change_data.get("action", "unknown")
                 logger.info(f"Processing item - Version: {version}, Action: {action}")
             except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in change data: {change_data_raw[:200]}... Error: {str(e)}")
+                logger.error(
+                    f"Invalid JSON in change data: {change_data_raw[:200]}... Error: {str(e)}"
+                )
                 logger.info("Removing invalid item from processing queue")
                 redis_client.lrem(processing_queue, 0, change_data_raw)
                 continue
-                
+
             # Process the change
             start_time = time()
             success = process_change(change_data)
             duration = time() - start_time
-            
+
             # Remove from processing queue
             if success:
-                logger.info(f"Successfully processed item in {duration:.2f}s - Version: {version}, Action: {action}")
+                logger.info(
+                    f"Successfully processed item in {duration:.2f}s - Version: {version}, Action: {action}"
+                )
                 redis_client.lrem(processing_queue, 0, change_data_raw)
             else:
-                logger.error(f"Failed to process item - Version: {version}, Action: {action}")
+                logger.error(
+                    f"Failed to process item - Version: {version}, Action: {action}"
+                )
                 logger.info("Moving failed item back to main queue for retry")
                 # If processing failed, move back to main queue for retry
                 redis_client.lrem(processing_queue, 0, change_data_raw)
                 redis_client.rpush(main_queue, change_data_raw)
                 sleep(1)  # Wait before retrying
-                
+
         except redis.RedisError as e:
             logger.error(f"Redis error in worker: {str(e)}", exc_info=True)
             sleep(5)  # Wait longer for Redis errors
@@ -244,9 +259,9 @@ def direct_create(payload, timestamp, version):
         "version": version,
         "action": "direct_create",
         "type": "schema",
-        "payload": payload
+        "payload": payload,
     }
-    
+
     paths = get_paths(version)
     process_schema_change(change_data, paths)
 
@@ -359,9 +374,9 @@ def log_timing(start_time, operation, version=None, extra_info=None):
 def process_schema_change(change_data, paths):
     global CURRENT_TIMESTAMP, PROCESSING_TIMESTAMPS
     lock_file = f"{paths['LOCK_PATH']}/schema.lock"  # Singular lock for all versions
-    version = change_data.get('version')
+    version = change_data.get("version")
     total_start_time = time()
-    
+
     # Create lock file if it doesn't exist
     if not os.path.exists(lock_file):
         open(lock_file, "w").close()
@@ -370,8 +385,10 @@ def process_schema_change(change_data, paths):
         logger.info(f"Starting to process schema change for version {version}")
         # Update processing timestamp for this version
         with PROCESSING_TIMESTAMPS_LOCK:
-            PROCESSING_TIMESTAMPS[version] = change_data.get('timestamp')
-            logger.info(f"Updated processing timestamp for version {version}: {PROCESSING_TIMESTAMPS[version]}")
+            PROCESSING_TIMESTAMPS[version] = change_data.get("timestamp")
+            logger.info(
+                f"Updated processing timestamp for version {version}: {PROCESSING_TIMESTAMPS[version]}"
+            )
 
         with open(lock_file, "r") as lock:
             # Get an exclusive lock for the entire schema change process
@@ -388,8 +405,17 @@ def process_schema_change(change_data, paths):
                 if CURRENT_TIMESTAMP is None:
                     CURRENT_TIMESTAMP = change_data["timestamp"]
                     logger.info(f"Initialized CURRENT_TIMESTAMP to {CURRENT_TIMESTAMP}")
-
-                if change_data["timestamp"] != CURRENT_TIMESTAMP:
+                    save_start = time()
+                    save_graph(
+                        schema_data, paths, timestamp=CURRENT_TIMESTAMP, is_schema=True
+                    )
+                    save_graph(
+                        state_data, paths, timestamp=CURRENT_TIMESTAMP, is_schema=False
+                    )
+                    log_timing(
+                        save_start, "Saving graphs for initial timestamp", version
+                    )
+                elif change_data["timestamp"] != CURRENT_TIMESTAMP:
                     timestamp = change_data["timestamp"]
                     logger.info(f"Updating graphs with new timestamp {timestamp}")
                     save_start = time()
@@ -426,7 +452,9 @@ def process_schema_change(change_data, paths):
                 elif action == "bulk_create":
                     bulk_start = time()
                     count = len(change_data["payload"])
-                    logger.info(f"[WORKER] Starting bulk create operation - {count} items")
+                    logger.info(
+                        f"[WORKER] Starting bulk create operation - {count} items"
+                    )
                     for i, payload in enumerate(change_data["payload"], 1):
                         schema_data, state_data = process_schema_create(
                             payload,
@@ -437,12 +465,21 @@ def process_schema_change(change_data, paths):
                         if i % 100 == 0:
                             elapsed = time() - bulk_start
                             rate = i / elapsed if elapsed > 0 else 0
-                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
-                    log_timing(bulk_start, f"Total bulk create processing", version, f"{count} items")
+                            logger.info(
+                                f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec"
+                            )
+                    log_timing(
+                        bulk_start,
+                        f"Total bulk create processing",
+                        version,
+                        f"{count} items",
+                    )
                 elif action == "bulk_update":
                     bulk_start = time()
                     count = len(change_data["payload"])
-                    logger.info(f"[WORKER] Starting bulk update operation - {count} items")
+                    logger.info(
+                        f"[WORKER] Starting bulk update operation - {count} items"
+                    )
                     for i, payload in enumerate(change_data["payload"], 1):
                         schema_data, state_data = process_schema_update(
                             payload,
@@ -453,12 +490,21 @@ def process_schema_change(change_data, paths):
                         if i % 100 == 0:
                             elapsed = time() - bulk_start
                             rate = i / elapsed if elapsed > 0 else 0
-                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
-                    log_timing(bulk_start, f"Total bulk update processing", version, f"{count} items")
+                            logger.info(
+                                f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec"
+                            )
+                    log_timing(
+                        bulk_start,
+                        f"Total bulk update processing",
+                        version,
+                        f"{count} items",
+                    )
                 elif action == "bulk_delete":
                     bulk_start = time()
                     count = len(change_data["payload"])
-                    logger.info(f"[WORKER] Starting bulk delete operation - {count} items")
+                    logger.info(
+                        f"[WORKER] Starting bulk delete operation - {count} items"
+                    )
                     for i, payload in enumerate(change_data["payload"], 1):
                         schema_data, state_data = process_schema_delete(
                             payload,
@@ -469,8 +515,15 @@ def process_schema_change(change_data, paths):
                         if i % 100 == 0:
                             elapsed = time() - bulk_start
                             rate = i / elapsed if elapsed > 0 else 0
-                            logger.info(f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec")
-                    log_timing(bulk_start, f"Total bulk delete processing", version, f"{count} items")
+                            logger.info(
+                                f"[WORKER] Progress: {i}/{count} items processed ({(i/count)*100:.1f}%) - Rate: {rate:.1f} items/sec"
+                            )
+                    log_timing(
+                        bulk_start,
+                        f"Total bulk delete processing",
+                        version,
+                        f"{count} items",
+                    )
                 elif action == "direct_create":
                     schema_data, state_data = process_schema_create_direct(
                         change_data["payload"],
@@ -484,9 +537,18 @@ def process_schema_change(change_data, paths):
                 save_start = time()
                 save_graph(schema_data, paths, is_schema=True)
                 save_graph(state_data, paths, is_schema=False)
+
+                save_graph(
+                    schema_data, paths, is_schema=True, timestamp=CURRENT_TIMESTAMP
+                )
+                save_graph(
+                    state_data, paths, is_schema=False, timestamp=CURRENT_TIMESTAMP
+                )
                 log_timing(save_start, "Saving final graphs", version)
-                
-                logger.info(f"Successfully processed schema change for version {version}")
+
+                logger.info(
+                    f"Successfully processed schema change for version {version}"
+                )
                 log_timing(total_start_time, "Total processing time", version)
                 return True
 
@@ -501,12 +563,18 @@ def process_schema_change(change_data, paths):
 
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"Error processing schema change for version {version}: {error_msg}")
-        logger.error(f"Total time before error: {time() - total_start_time:.2f} seconds")
+        logger.error(
+            f"Error processing schema change for version {version}: {error_msg}"
+        )
+        logger.error(
+            f"Total time before error: {time() - total_start_time:.2f} seconds"
+        )
         # Clear the processing timestamp in case of error
         with PROCESSING_TIMESTAMPS_LOCK:
             PROCESSING_TIMESTAMPS.pop(version, None)
-            logger.info(f"Cleared processing timestamp for version {version} due to error")
+            logger.info(
+                f"Cleared processing timestamp for version {version} due to error"
+            )
         return False
 
 

@@ -64,7 +64,6 @@ def process_schema_create(
         if DEBUG_LOGGING_ENABLED:
             debug_logger.debug(f"Processing schema create with payload: {payload}")
 
-        # Check if this is an edge creation
         if "source_id" in payload and "target_id" in payload:
             source_id = payload["source_id"]
             target_id = payload["target_id"]
@@ -75,36 +74,49 @@ def process_schema_create(
             if not schema.has_node(target_id):
                 raise ValueError(f"Target node {target_id} does not exist in schema")
 
-            # Add the edge with its properties
-            schema.add_edge(
-                source_id,
-                target_id,
-                relationship_type=payload["edge_type"],
-                **payload.get("properties", {}),
-            )
+            # Add or update the edge with its properties
+            edge_attrs = {
+                "relationship_type": payload["edge_type"],
+                **payload.get("properties", {})
+            }
+            
+            if schema.has_edge(source_id, target_id):
+                # Update existing edge properties
+                schema[source_id][target_id].update(edge_attrs)
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(
+                        f"Updating edge from {source_id} to {target_id} with attributes: {edge_attrs}"
+                    )
+            else:
+                # Add new edge
+                schema.add_edge(source_id, target_id, **edge_attrs)
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(
+                        f"Creating edge from {source_id} to {target_id} with attributes: {edge_attrs}"
+                    )
 
-            if DEBUG_LOGGING_ENABLED:
-                debug_logger.debug(
-                    f"Creating edge from {source_id} to {target_id} with attributes: {payload.get('properties', {})}"
-                )
-
-        # Node creation
+        # Node creation or update
         else:
             node_id = payload["node_id"]
+            node_attrs = {
+                "node_type": payload["node_type"],
+                **payload["properties"]
+            }
 
-            # Verify node doesn't already exist
             if schema.has_node(node_id):
-                raise ValueError(f"Node {node_id} already exists in schema")
-
-            # Add node with its properties
-            schema.add_node(
-                node_id, node_type=payload["node_type"], **payload["properties"]
-            )
-
-            if DEBUG_LOGGING_ENABLED:
-                debug_logger.debug(
-                    f"Creating node {node_id} with attributes: {payload['properties']}"
-                )
+                # Update existing node properties
+                schema.nodes[node_id].update(node_attrs)
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(
+                        f"Updating node {node_id} with attributes: {node_attrs}"
+                    )
+            else:
+                # Add new node
+                schema.add_node(node_id, **node_attrs)
+                if DEBUG_LOGGING_ENABLED:
+                    debug_logger.debug(
+                        f"Creating node {node_id} with attributes: {node_attrs}"
+                    )
 
             # if units_in_chain is specified, add instances to state graph
             properties = dict(payload.get("properties", {}))
